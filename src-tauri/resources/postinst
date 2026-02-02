@@ -1,0 +1,24 @@
+#!/bin/bash
+set -e
+
+RESOURCE_DIR="/usr/lib/anvil/resources/resources"
+POLICY_SOURCE="$RESOURCE_DIR/com.anvil.policy"
+POLICY_DEST="/usr/share/polkit-1/actions/com.anvil.policy"
+HELPER_SOURCE="$RESOURCE_DIR/anvil-apparmor-helper"
+HELPER_DIR="/usr/lib/anvil"
+HELPER_DEST="$HELPER_DIR/anvil-apparmor-helper"
+
+# Install PolicyKit policy
+if [ -f "$POLICY_SOURCE" ]; then
+    cp "$POLICY_SOURCE" "$POLICY_DEST"
+    echo "Polkit policy installed to $POLICY_DEST"
+fi
+
+# Install AppArmor helper
+if [ -f "$HELPER_SOURCE" ]; then
+    mkdir -p "$HELPER_DIR"
+    cp "$HELPER_SOURCE" "$HELPER_DEST"
+    chown root:root "$HELPER_DEST"
+    chmod 755 "$HELPER_DEST"
+    echo "AppArmor helper installed to $HELPER_DEST"
+fi

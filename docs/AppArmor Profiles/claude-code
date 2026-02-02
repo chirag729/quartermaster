@@ -1,0 +1,70 @@
+#include <tunables/global>
+
+profile claude-code @{HOME}/.nvm/versions/node/*/bin/claude flags=(enforce) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/ssl_certs>
+  #include <abstractions/user-tmp>
+
+  # Node.js (via nvm)
+  owner @{HOME}/.nvm/** rix,
+  
+  # Claude Code config/data
+  owner @{HOME}/.claude/ rw,
+  owner @{HOME}/.claude/** rwk,
+  owner @{HOME}/.config/claude-code/ rw,
+  owner @{HOME}/.config/claude-code/** rwk,
+  
+  # Project directories - adjust as needed
+  owner /mnt/data/Development/Projects/** rwkl,
+  
+  # Git
+  /usr/bin/git rix,
+  /usr/lib/git-core/** rix,
+  owner @{HOME}/.gitconfig r,
+  owner @{HOME}/.config/git/** r,
+  
+  # Common tools Claude Code may invoke
+  /usr/bin/bash rix,
+  /usr/bin/sh rix,
+  /usr/bin/env rix,
+  /usr/bin/cat rix,
+  /usr/bin/ls rix,
+  /usr/bin/grep rix,
+  /usr/bin/find rix,
+  /usr/bin/mkdir rix,
+  /usr/bin/rm rix,
+  /usr/bin/cp rix,
+  /usr/bin/mv rix,
+  /usr/bin/chmod rix,
+  /usr/bin/touch rix,
+  /usr/bin/head rix,
+  /usr/bin/tail rix,
+  /usr/bin/wc rix,
+  /usr/bin/sort rix,
+  /usr/bin/uniq rix,
+  /usr/bin/diff rix,
+  /usr/bin/sed rix,
+  /usr/bin/awk rix,
+  /usr/bin/dirname rix,
+  /usr/bin/basename rix,
+  /usr/bin/readlink rix,
+  /usr/bin/realpath rix,
+  /usr/bin/pwd rix,
+  /usr/bin/which rix,
+  /usr/bin/uname rix,
+  /usr/bin/curl rix,
+  /usr/bin/wget rix,
+  
+  # Network (API calls)
+  network inet stream,
+  network inet6 stream,
+  
+  # Proc filesystem
+  @{PROC}/@{pid}/** r,
+  
+  # Deny sensitive areas
+  deny @{HOME}/.ssh/id_* r,
+  deny @{HOME}/.gnupg/** rwx,
+  deny /etc/shadow r,
+}

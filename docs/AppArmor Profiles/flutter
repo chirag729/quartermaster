@@ -1,0 +1,120 @@
+#include <tunables/global>
+
+profile flutter /mnt/data/Development/SDK/flutter/bin/{flutter,dart} flags=(enforce) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/ssl_certs>
+  #include <abstractions/user-tmp>
+
+  # Flutter SDK
+  owner /mnt/data/Development/SDK/flutter/** rwkix,
+  
+  # Project directories
+  owner /mnt/data/Development/Projects/** rwkl,
+  
+  # Pub cache
+  owner @{HOME}/.pub-cache/ rw,
+  owner @{HOME}/.pub-cache/** rwk,
+  
+  # Dart/Flutter config
+  owner @{HOME}/.config/flutter/ rw,
+  owner @{HOME}/.config/flutter/** rwk,
+  owner @{HOME}/.dart-tool/ rw,
+  owner @{HOME}/.dart-tool/** rwk,
+  
+  # Android SDK
+  owner /mnt/data/Development/SDK/android/** rwkix,
+  owner @{HOME}/.android/ rw,
+  owner @{HOME}/.android/** rwk,
+
+  
+  # Git
+  owner @{HOME}/.gitconfig r,
+  owner @{HOME}/.config/git/** r,
+  /usr/lib/git-core/** rix,
+  /usr/libexec/git-core/** rix,
+  
+  # Gradle
+  owner @{HOME}/.gradle/ rw,
+  owner @{HOME}/.gradle/** rwk,
+  
+  # Java
+  /usr/lib/jvm/** rix,
+  /etc/java*/** r,
+  
+  # Chrome/Chromium (web dev)
+  /usr/bin/google-chrome* rix,
+  /usr/bin/chromium* rix,
+  /opt/google/chrome/** rix,
+  
+  # Linux desktop build tools
+  /usr/bin/clang* rix,
+  /usr/bin/cmake rix,
+  /usr/bin/ninja rix,
+  /usr/bin/pkg-config rix,
+  /usr/lib/llvm*/** rix,
+  
+  # GTK/Linux desktop dependencies
+  /usr/include/** r,
+  /usr/lib/x86_64-linux-gnu/** rm,
+  /usr/share/glib-*/schemas/* r,
+  
+  # Common tools
+  /usr/bin/git rix,
+  /usr/bin/bash rix,
+  /usr/bin/sh rix,
+  /usr/bin/env rix,
+  /usr/bin/which rix,
+  /usr/bin/uname rix,
+  /usr/bin/cat rix,
+  /usr/bin/grep rix,
+  /usr/bin/find rix,
+  /usr/bin/mkdir rix,
+  /usr/bin/rm rix,
+  /usr/bin/cp rix,
+  /usr/bin/mv rix,
+  /usr/bin/chmod rix,
+  /usr/bin/curl rix,
+  /usr/bin/unzip rix,
+  /usr/bin/tar rix,
+  /usr/bin/gzip rix,
+  /usr/bin/dirname rix,
+  /usr/bin/basename rix,
+  /usr/bin/pwd rix,
+  /usr/bin/readlink rix,
+  /usr/bin/realpath rix,
+  /usr/bin/sleep rix,
+  /usr/bin/flock rix,
+  /usr/bin/touch rix,
+  /usr/bin/tr rix,
+  
+  # Network
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+  network inet6 dgram,
+  
+  # USB debugging
+  /dev/bus/usb/** rw,
+  /sys/bus/usb/** r,
+  /sys/devices/** r,
+  
+  # Proc filesystem
+  @{PROC}/@{pid}/** r,
+  @{PROC}/sys/kernel/random/uuid r,
+  
+  # X11/Wayland
+  owner @{HOME}/.Xauthority r,
+  /tmp/.X11-unix/* rw,
+  owner /run/user/*/wayland-* rw,
+  
+  # Temp files
+  owner /tmp/flutter_tools.* rwk,
+  owner /tmp/dart* rwk,
+  owner /tmp/pub_* rwk,
+  
+  # Deny sensitive areas
+  deny @{HOME}/.ssh/id_* r,
+  deny @{HOME}/.gnupg/** rwx,
+  deny /etc/shadow r,
+}

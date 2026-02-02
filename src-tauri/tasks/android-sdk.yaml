@@ -1,0 +1,42 @@
+id: android-sdk
+name: Android SDK
+description: Download and install Android command-line tools
+icon: Tablet
+category: SDKs
+tags: [mobile, android]
+privilege: user
+target: any
+depends_on: [create-sdk-folder]
+
+config:
+  - key: sdk_base_path
+    label: SDK base path
+    type: path
+    default: "~/SDK"
+    required: false
+
+detect: |
+  test -d "{{sdk_base_path}}/android/cmdline-tools"
+
+steps:
+  - name: Download Android command-line tools
+    progress: 10
+    run: |
+      mkdir -p "{{sdk_base_path}}/android"
+      curl -fSL -o "{{sdk_base_path}}/android/cmdline-tools.zip" \
+        https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+
+  - name: Extract tools
+    progress: 60
+    run: |
+      unzip -q -o "{{sdk_base_path}}/android/cmdline-tools.zip" \
+        -d "{{sdk_base_path}}/android"
+      rm -f "{{sdk_base_path}}/android/cmdline-tools.zip"
+
+  - name: Reorganize to cmdline-tools/latest structure
+    progress: 100
+    run: |
+      SDK_PATH="{{sdk_base_path}}/android"
+      mv "$SDK_PATH/cmdline-tools" "$SDK_PATH/cmdline-tools-temp"
+      mkdir -p "$SDK_PATH/cmdline-tools"
+      mv "$SDK_PATH/cmdline-tools-temp" "$SDK_PATH/cmdline-tools/latest"

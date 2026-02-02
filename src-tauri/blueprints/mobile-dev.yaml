@@ -1,0 +1,21 @@
+id: mobile-dev
+name: Mobile Development
+description: Flutter and Android SDK setup for mobile app development
+icon: Smartphone
+builtin: true
+
+tasks:
+  - id: create-development-folder
+    enabled: true
+
+  - id: create-sdk-folder
+    enabled: true
+
+  - id: git-ssh
+    enabled: true
+
+  - id: flutter-sdk
+    enabled: true
+
+  - id: android-sdk
+    enabled: true

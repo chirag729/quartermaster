@@ -1,0 +1,25 @@
+id: intellij-idea
+name: IntelliJ IDEA
+description: Install IntelliJ IDEA Community Edition via snap
+icon: Code
+category: Applications
+tags: [ide, java]
+privilege: admin
+target: local_only
+
+config:
+  - key: edition
+    label: Edition
+    type: select
+    default: community
+    options: [community, ultimate]
+    required: false
+
+detect: |
+  snap list intellij-idea-community 2>/dev/null || snap list intellij-idea-ultimate 2>/dev/null
+
+steps:
+  - name: Install IntelliJ IDEA via snap
+    progress: 100
+    run: |
+      pkexec snap install "intellij-idea-{{edition}}" --classic

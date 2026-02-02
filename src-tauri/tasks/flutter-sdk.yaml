@@ -1,0 +1,43 @@
+id: flutter-sdk
+name: Flutter SDK
+description: Download and install Flutter SDK
+icon: Smartphone
+category: SDKs
+tags: [mobile, flutter]
+privilege: user
+target: any
+depends_on: [create-sdk-folder]
+
+config:
+  - key: channel
+    label: Flutter Channel
+    type: select
+    default: stable
+    options: [stable, beta, dev]
+    required: false
+  - key: sdk_base_path
+    label: SDK base path
+    type: path
+    default: "~/SDK"
+    required: false
+
+detect: |
+  test -f "{{sdk_base_path}}/flutter/bin/flutter"
+
+steps:
+  - name: Clone Flutter repository
+    progress: 20
+    run: |
+      mkdir -p "{{sdk_base_path}}"
+      git clone --depth 1 --branch "{{channel}}" \
+        https://github.com/flutter/flutter.git "{{sdk_base_path}}/flutter"
+
+  - name: Verify installation
+    progress: 90
+    run: |
+      test -f "{{sdk_base_path}}/flutter/bin/flutter"
+
+  - name: Flutter SDK installed
+    progress: 100
+    run: |
+      echo "Flutter SDK installed successfully"

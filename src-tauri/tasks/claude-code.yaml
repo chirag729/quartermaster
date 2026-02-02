@@ -1,0 +1,17 @@
+id: claude-code
+name: Claude Code
+description: Install Claude Code CLI via npm
+icon: Terminal
+category: Applications
+tags: [ai, cli]
+privilege: user
+target: any
+
+detect: |
+  npm list -g @anthropic-ai/claude-code 2>/dev/null | grep -q claude-code
+
+steps:
+  - name: Install Claude Code via npm
+    progress: 100
+    run: |
+      npm install -g @anthropic-ai/claude-code

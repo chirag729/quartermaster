@@ -1,0 +1,7 @@
+id: minimal-server
+name: Minimal Server
+description: Minimal server setup with essential system configuration
+icon: Server
+builtin: true
+
+tasks: []

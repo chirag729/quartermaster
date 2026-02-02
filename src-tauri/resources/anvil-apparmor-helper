@@ -1,0 +1,63 @@
+#!/bin/bash
+set -euo pipefail
+
+APPARMOR_DIR="/etc/apparmor.d"
+
+# Validate that a path resolves to within /etc/apparmor.d/
+validate_profile_path() {
+    local path="$1"
+    local resolved
+    resolved="$(realpath -m "$path")"
+    case "$resolved" in
+        "$APPARMOR_DIR"/[!.]*)       ;;
+        "$APPARMOR_DIR/local"/[!.]*) ;;
+        *) echo "Error: invalid profile path: $resolved" >&2; exit 1 ;;
+    esac
+    if [[ "$resolved" == *".."* ]]; then
+        echo "Error: path traversal detected" >&2; exit 1
+    fi
+}
+
+# Validate source is a regular file (not symlink to sensitive file)
+validate_source_file() {
+    local path="$1"
+    if [ ! -f "$path" ]; then
+        echo "Error: source file does not exist: $path" >&2; exit 1
+    fi
+}
+
+case "${1:-}" in
+    aa-status)
+        exec aa-status --json
+        ;;
+    copy-and-reload)
+        [ $# -eq 3 ] || { echo "Usage: copy-and-reload SOURCE DEST" >&2; exit 1; }
+        validate_source_file "$2"
+        validate_profile_path "$3"
+        cp -- "$2" "$3"
+        chmod 644 "$3"
+        chown root:root "$3"
+        apparmor_parser -r "$3"
+        ;;
+    batch-copy-and-reload)
+        # Accepts pairs: source1 dest1 source2 dest2 ...
+        shift
+        profiles_to_reload=()
+        while [ $# -ge 2 ]; do
+            validate_source_file "$1"
+            validate_profile_path "$2"
+            cp -- "$1" "$2"
+            chmod 644 "$2"
+            chown root:root "$2"
+            profiles_to_reload+=("$2")
+            shift 2
+        done
+        for profile in "${profiles_to_reload[@]}"; do
+            apparmor_parser -r "$profile"
+        done
+        ;;
+    *)
+        echo "Unknown command: ${1:-}" >&2
+        exit 1
+        ;;
+esac

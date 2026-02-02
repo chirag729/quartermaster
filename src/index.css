@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-warm-50: #fdf8f3;
+  --color-warm-100: #f5ebe0;
+  --color-warm-200: #e8d5c0;
+  --color-warm-300: #d4a574;
+  --color-warm-400: #c4956a;
+  --color-warm-500: #b07d55;
+  --color-warm-600: #96643f;
+  --color-warm-700: #7a4f32;
+  --color-warm-800: #5e3a25;
+  --color-warm-900: #42251a;
+
+  --color-surface-light: #faf8f5;
+  --color-surface-dark: #1a1a1a;
+  --color-card-light: #ffffff;
+  --color-card-dark: #2d2d2d;
+  --color-sidebar-light: #f5f0eb;
+  --color-sidebar-dark: #222222;
+  --color-border-light: #e8e0d8;
+  --color-border-dark: #3d3d3d;
+  --color-text-primary-light: #1a1a1a;
+  --color-text-primary-dark: #f0ebe5;
+  --color-text-secondary-light: #6b6560;
+  --color-text-secondary-dark: #a09890;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --radius-lg: 12px;
+  --radius-md: 8px;
+  --radius-sm: 6px;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-surface-light);
+  color: var(--color-text-primary-light);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root.dark body {
+  background-color: var(--color-surface-dark);
+  color: var(--color-text-primary-dark);
+}
+
+dialog[open] {
+  animation: dialog-show 0.15s ease-out;
+}
+dialog[open]::backdrop {
+  animation: backdrop-show 0.15s ease-out;
+}
+@keyframes dialog-show {
+  from { opacity: 0; transform: scale(0.95); }
+}
+@keyframes backdrop-show {
+  from { opacity: 0; }
+}

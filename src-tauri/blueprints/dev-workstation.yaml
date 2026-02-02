@@ -1,0 +1,27 @@
+id: dev-workstation
+name: Development Workstation
+description: Full development environment with Flutter, Android SDK, IntelliJ, and Claude Code
+icon: Monitor
+builtin: true
+
+tasks:
+  - id: create-development-folder
+    enabled: true
+
+  - id: create-sdk-folder
+    enabled: true
+
+  - id: git-ssh
+    enabled: true
+
+  - id: flutter-sdk
+    enabled: true
+
+  - id: android-sdk
+    enabled: true
+
+  - id: intellij-idea
+    enabled: true
+
+  - id: claude-code
+    enabled: true
