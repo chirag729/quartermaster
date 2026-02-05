@@ -2,7 +2,7 @@
 
 ## What Are Tasks?
 
-A task is a discrete unit of work that Anvil can execute on a node. Tasks are the building blocks of blueprints. Each task handles a single concern -- creating a directory, installing an SDK, configuring a tool -- and reports its status back to Anvil.
+A task is a discrete unit of work that Quartermaster can execute on a node. Tasks are the building blocks of blueprints. Each task handles a single concern -- creating a directory, installing an SDK, configuring a tool -- and reports its status back to Quartermaster.
 
 ## Task Library
 
@@ -10,7 +10,7 @@ The **Task Library** page lists all available tasks. From here you can browse ta
 
 ## Built-in Tasks
 
-Anvil includes the following built-in tasks:
+Quartermaster includes the following built-in tasks:
 
 ### create-development-folder
 
@@ -124,7 +124,7 @@ Tasks declare the privilege level they require to execute:
 | Level | Behavior |
 |-------|----------|
 | **User** | Runs with the current user's permissions. No elevation required. |
-| **Admin** | Requires elevated privileges. Anvil uses PolicyKit (`pkexec`) to prompt for authorization. The application never runs as root directly. |
+| **Admin** | Requires elevated privileges. Quartermaster uses PolicyKit (`pkexec`) to prompt for authorization. The application never runs as root directly. |
 
 Tasks that require Admin privilege will trigger a system authentication dialog when executed.
 

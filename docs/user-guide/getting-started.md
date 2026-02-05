@@ -1,19 +1,19 @@
 # Getting Started
 
-## What Is Anvil?
+## What Is Quartermaster?
 
-Anvil is a Tauri 2 desktop application for provisioning and managing Linux machines. It targets developers and system administrators who need to set up consistent development environments across local and remote machines.
+Quartermaster is a Tauri 2 desktop application for provisioning and managing Linux machines. It targets developers and system administrators who need to set up consistent development environments across local and remote machines.
 
-Anvil automates repetitive setup work -- installing SDKs, configuring Git, creating project directories -- by organizing discrete tasks into reusable blueprints that can be applied to any machine in your fleet.
+Quartermaster automates repetitive setup work -- installing SDKs, configuring Git, creating project directories -- by organizing discrete tasks into reusable blueprints that can be applied to any machine in your fleet.
 
 ## First Launch
 
-When you launch Anvil for the first time, two things happen automatically:
+When you launch Quartermaster for the first time, two things happen automatically:
 
-1. **Local node detection.** Anvil detects the machine it is running on and registers it as the local node in your fleet. No manual configuration is required.
+1. **Local node detection.** Quartermaster detects the machine it is running on and registers it as the local node in your fleet. No manual configuration is required.
 2. **Default blueprints.** A set of built-in blueprints is created (Development Workstation, Mobile Development, Minimal Server). These serve as starting points that you can use directly or customize.
 
-After initialization, Anvil opens to the Fleet page, which shows all managed machines and their statuses.
+After initialization, Quartermaster opens to the Fleet page, which shows all managed machines and their statuses.
 
 ## Applying a Blueprint to the Local Node
 
@@ -27,9 +27,9 @@ To provision your local machine:
 
 ## Task Execution Flow
 
-When you apply a blueprint, Anvil processes each enabled task in order:
+When you apply a blueprint, Quartermaster processes each enabled task in order:
 
-1. **Detect state** -- Anvil checks whether the task has already been completed (for example, whether a directory already exists or a package is already installed).
+1. **Detect state** -- Quartermaster checks whether the task has already been completed (for example, whether a directory already exists or a package is already installed).
 2. **Skip completed** -- Tasks whose desired state is already met are marked as `Skipped` and not re-executed.
 3. **Execute remaining** -- Tasks that still need work are executed sequentially in their defined order.
 4. **Progress events** -- Each task emits progress events as it runs. The UI displays real-time status updates, including per-task progress indicators and any output or errors.
@@ -41,7 +41,7 @@ If a task fails, execution stops and the failure is reported. You can fix the un
 All persistent data is stored under:
 
 ```
-~/.config/anvil/
+~/.config/quartermaster/
 ```
 
 This directory contains:
@@ -52,4 +52,4 @@ This directory contains:
 | `nodes/` | Fleet node definitions (one JSON file per node) |
 | `blueprints/` | Blueprint definitions (one JSON file per blueprint) |
 
-If you need to reset Anvil to a clean state, remove or rename this directory. Anvil will re-create it with defaults on the next launch.
+If you need to reset Quartermaster to a clean state, remove or rename this directory. Quartermaster will re-create it with defaults on the next launch.

@@ -1,12 +1,12 @@
 [package]
-name = "anvil"
+name = "quartermaster"
 version = "0.1.0"
-description = "Anvil"
+description = "Quartermaster"
 authors = ["you"]
 edition = "2021"
 
 [lib]
-name = "anvil_lib"
+name = "quartermaster_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]

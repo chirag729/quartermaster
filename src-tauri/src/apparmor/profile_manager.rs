@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use super::types::{ApplyPermissionsRequest, ProfileInfo, ProfileDetail, ProfileMode};
 use crate::error::AppError;
 
-const HELPER_PATH: &str = "/usr/lib/anvil/anvil-apparmor-helper";
+const HELPER_PATH: &str = "/usr/lib/quartermaster/quartermaster-apparmor-helper";
 
 /// Validate a profile name to prevent path traversal and injection attacks.
 fn validate_profile_name(name: &str) -> Result<(), AppError> {
@@ -20,12 +20,12 @@ fn validate_profile_name(name: &str) -> Result<(), AppError> {
 
 /// Run a command through the AppArmor helper script via pkexec.
 ///
-/// If the helper is installed at /usr/lib/anvil/anvil-apparmor-helper, uses it
-/// directly with pkexec. This triggers the com.anvil.apparmor-manage PolicyKit
+/// If the helper is installed at /usr/lib/quartermaster/quartermaster-apparmor-helper, uses it
+/// directly with pkexec. This triggers the com.quartermaster.apparmor-manage PolicyKit
 /// action which has auth_admin_keep — credentials are cached for ~5 minutes.
 ///
 /// If the helper is not installed, falls back to direct pkexec calls.
-async fn run_apparmor_helper(args: &[&str]) -> Result<std::process::Output, AppError> {
+pub(crate) async fn run_apparmor_helper(args: &[&str]) -> Result<std::process::Output, AppError> {
     if std::path::Path::new(HELPER_PATH).exists() {
         tokio::process::Command::new("pkexec")
             .arg(HELPER_PATH)
@@ -102,6 +102,23 @@ async fn run_apparmor_helper_fallback(args: &[&str]) -> Result<std::process::Out
                 .output()
                 .await
                 .map_err(|e| AppError::AppArmor(format!("batch-copy-and-reload failed: {}", e)))
+        }
+        Some("remove-and-unload") => {
+            // args: ["remove-and-unload", profile_path]
+            if args.len() != 2 {
+                return Err(AppError::AppArmor("remove-and-unload requires a profile path".into()));
+            }
+            let path = args[1];
+            let script = format!(
+                "apparmor_parser -R {} 2>/dev/null; rm -f {}",
+                shell_escape(path),
+                shell_escape(path),
+            );
+            tokio::process::Command::new("pkexec")
+                .args(["bash", "-c", &script])
+                .output()
+                .await
+                .map_err(|e| AppError::AppArmor(format!("remove-and-unload failed: {}", e)))
         }
         _ => Err(AppError::AppArmor(format!("Unknown helper command: {:?}", args.first()))),
     }
@@ -255,7 +272,7 @@ pub async fn apply_rules(profile_name: &str, rules: &[String]) -> Result<(), App
 
     // Write to a secure temp file
     let temp_file = tempfile::Builder::new()
-        .prefix("anvil-apparmor-")
+        .prefix("qm-apparmor-")
         .tempfile()
         .map_err(|e| AppError::AppArmor(format!("Failed to create temp file: {}", e)))?;
 
@@ -281,7 +298,7 @@ fn insert_rules_into_content(content: &str, rules: &[String]) -> Result<String, 
 
     if let Some(idx) = close_idx {
         lines.insert(idx, String::new());
-        lines.insert(idx + 1, "  # Rules added by Anvil".to_string());
+        lines.insert(idx + 1, "  # Rules added by Quartermaster".to_string());
         for (i, rule) in rules.iter().enumerate() {
             lines.insert(idx + 2 + i, rule.clone());
         }
@@ -324,7 +341,7 @@ pub async fn apply_rules_batch(requests: &[ApplyPermissionsRequest]) -> Result<(
         let new_content = insert_rules_into_content(&content, &request.rules)?;
 
         let temp_file = tempfile::Builder::new()
-            .prefix("anvil-apparmor-batch-")
+            .prefix("qm-apparmor-batch-")
             .tempfile()
             .map_err(|e| AppError::AppArmor(format!("Failed to create temp file: {}", e)))?;
 
@@ -395,8 +412,10 @@ pub async fn rewrite_profile_rules(profile_name: &str, rules: &[String]) -> Resu
         if trimmed.starts_with("include ")
             || trimmed.starts_with("#include ")
             || (trimmed.starts_with('#')
+                && !trimmed.starts_with("# Rules added by Quartermaster")
                 && !trimmed.starts_with("# Rules added by Anvil")
                 && !trimmed.starts_with("# Rules added by Machine Setup")
+                && !trimmed.starts_with("# Rules consolidated by Quartermaster")
                 && !trimmed.starts_with("# Rules consolidated by Anvil")
                 && !trimmed.starts_with("# Rules consolidated by Machine Setup"))
         {
@@ -406,7 +425,7 @@ pub async fn rewrite_profile_rules(profile_name: &str, rules: &[String]) -> Resu
 
     // Add new rules
     new_lines.push(String::new());
-    new_lines.push("  # Rules consolidated by Anvil".to_string());
+    new_lines.push("  # Rules consolidated by Quartermaster".to_string());
     for rule in rules {
         new_lines.push(rule.clone());
     }
@@ -420,7 +439,7 @@ pub async fn rewrite_profile_rules(profile_name: &str, rules: &[String]) -> Resu
 
     // Write to a secure temp file
     let temp_file = tempfile::Builder::new()
-        .prefix("anvil-apparmor-rewrite-")
+        .prefix("qm-apparmor-rewrite-")
         .tempfile()
         .map_err(|e| AppError::AppArmor(format!("Failed to create temp file: {}", e)))?;
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Anvil uses SSH to connect to remote nodes for task execution. This guide covers SSH configuration, key management, authentication methods, and FIDO2/YubiKey support.
+Quartermaster uses SSH to connect to remote nodes for task execution. This guide covers SSH configuration, key management, authentication methods, and FIDO2/YubiKey support.
 
 ## SSH Configuration
 
@@ -19,7 +19,7 @@ When adding a remote node, you provide an `SshConfig` with the following fields:
 
 ## Authentication Methods
 
-Anvil supports four SSH authentication methods:
+Quartermaster supports four SSH authentication methods:
 
 ### KeyFile
 
@@ -30,7 +30,7 @@ Auth method: KeyFile
 Private key path: ~/.ssh/id_ed25519
 ```
 
-This is the most common method. Point Anvil to the private key file; the corresponding public key is derived automatically.
+This is the most common method. Point Quartermaster to the private key file; the corresponding public key is derived automatically.
 
 ### Certificate
 
@@ -55,7 +55,7 @@ Each authentication requires physical touch on the hardware key.
 
 ### Agent
 
-Delegate authentication to the running SSH agent. Anvil does not manage keys directly; it relies on keys already loaded into `ssh-agent`.
+Delegate authentication to the running SSH agent. Quartermaster does not manage keys directly; it relies on keys already loaded into `ssh-agent`.
 
 ```
 Auth method: Agent
@@ -65,11 +65,11 @@ This is useful when your keys are managed externally or when using forwarded age
 
 ## SSH Key Management
 
-Anvil provides built-in SSH key management accessible from the settings or the Add Node dialog.
+Quartermaster provides built-in SSH key management accessible from the settings or the Add Node dialog.
 
 ### Listing Existing Keys
 
-Anvil scans `~/.ssh/` and lists all detected key pairs. For each key, it shows:
+Quartermaster scans `~/.ssh/` and lists all detected key pairs. For each key, it shows:
 
 - Key type (e.g., `ed25519`, `ed25519-sk`)
 - File path
@@ -101,15 +101,15 @@ Testing the connection before saving avoids adding nodes with broken configurati
 
 To set up key-based authentication on a remote server:
 
-1. Generate a key pair (or select an existing one) in Anvil's SSH key management panel.
+1. Generate a key pair (or select an existing one) in Quartermaster's SSH key management panel.
 2. Use the **Deploy Key** action to copy the public key to the remote server's `~/.ssh/authorized_keys` file.
 3. Verify by running **Test Connection** against the remote node.
 
-This is equivalent to running `ssh-copy-id` manually but handled entirely within the Anvil UI.
+This is equivalent to running `ssh-copy-id` manually but handled entirely within the Quartermaster UI.
 
 ## YubiKey / FIDO2 Support
 
-Anvil supports hardware security keys that implement the FIDO2 standard.
+Quartermaster supports hardware security keys that implement the FIDO2 standard.
 
 ### Generating an ed25519-sk Key
 

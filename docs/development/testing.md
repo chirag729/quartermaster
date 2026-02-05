@@ -1,6 +1,6 @@
 # Testing
 
-Anvil has both frontend and backend test suites. Frontend tests use Vitest with jsdom; backend tests use Rust's built-in test framework with `cargo test`.
+Quartermaster has both frontend and backend test suites. Frontend tests use Vitest with jsdom; backend tests use Rust's built-in test framework with `cargo test`.
 
 ## Frontend Tests
 
@@ -113,7 +113,7 @@ fn save_and_reload_from_disk() {
 }
 ```
 
-This approach ensures tests never read from or write to real config directories (`~/.config/anvil/`).
+This approach ensures tests never read from or write to real config directories (`~/.config/quartermaster/`).
 
 ### Writing backend tests
 

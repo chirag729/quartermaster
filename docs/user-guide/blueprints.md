@@ -2,11 +2,11 @@
 
 ## What Are Blueprints?
 
-A blueprint is a reusable template that bundles a set of tasks into a single, repeatable provisioning plan. Instead of manually running tasks one by one, you assign a blueprint to a node and apply it. Anvil handles the rest.
+A blueprint is a reusable template that bundles a set of tasks into a single, repeatable provisioning plan. Instead of manually running tasks one by one, you assign a blueprint to a node and apply it. Quartermaster handles the rest.
 
 ## Built-in Blueprints
 
-Anvil ships with three built-in blueprints:
+Quartermaster ships with three built-in blueprints:
 
 | Blueprint | Tasks | Description |
 |-----------|-------|-------------|
@@ -52,7 +52,7 @@ Each node can have one blueprint assigned at a time. Changing the assignment rep
 
 ## Apply Flow
 
-When you click **Apply** on a node with an assigned blueprint, Anvil executes the following sequence:
+When you click **Apply** on a node with an assigned blueprint, Quartermaster executes the following sequence:
 
 1. **Collect enabled entries** -- Only entries with `enabled: true` are considered.
 2. **Sort by order** -- Entries are sorted by their `order` field, lowest first.
@@ -63,7 +63,7 @@ When you click **Apply** on a node with an assigned blueprint, Anvil executes th
 
 ## Progress Events
 
-During blueprint application, Anvil emits progress events that the UI subscribes to in real time. These events report:
+During blueprint application, Quartermaster emits progress events that the UI subscribes to in real time. These events report:
 
 - Which task is currently executing.
 - Per-task progress (started, in progress, completed, or failed).

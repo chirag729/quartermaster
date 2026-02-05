@@ -2,15 +2,15 @@
 
 ## Overview
 
-A **Fleet** is the collection of all machines that Anvil manages. Each machine in the fleet is called a **Node**. The Fleet page is the central hub for viewing, adding, and organizing your machines.
+A **Fleet** is the collection of all machines that Quartermaster manages. Each machine in the fleet is called a **Node**. The Fleet page is the central hub for viewing, adding, and organizing your machines.
 
 ## Node Kinds
 
-Every node has a kind that determines how Anvil connects to it:
+Every node has a kind that determines how Quartermaster connects to it:
 
 | Kind | Description |
 |------|-------------|
-| **Local** | The machine Anvil is running on. Auto-detected at first launch. There is always exactly one local node. |
+| **Local** | The machine Quartermaster is running on. Auto-detected at first launch. There is always exactly one local node. |
 | **Remote** | A machine accessible over SSH. Added manually through the Add Node dialog. |
 
 ## Node Status

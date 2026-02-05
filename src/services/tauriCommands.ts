@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { TaskInfo } from "../types/task";
-import type { DenialEvent, PermissionSuggestion, ProfileInfo, ProfileDetail, ApplyPermissionsRequest, ConsolidationResult } from "../types/apparmor";
+import type { DenialEvent, PermissionSuggestion, ProfileInfo, ProfileDetail, ApplyPermissionsRequest, ConsolidationResult, ProfileTemplateInfo, ProfileTemplateConfig, SyncResultInfo } from "../types/apparmor";
 import type { AppConfig } from "../types/config";
 import type { Node, NodeKind, NodeStatus, SshConfig } from "../types/node";
 import type { Blueprint, BlueprintTaskEntry } from "../types/blueprint";
@@ -57,6 +57,39 @@ export async function startLogMonitor(): Promise<void> {
 
 export async function stopLogMonitor(): Promise<void> {
   return invoke("stop_log_monitor");
+}
+
+// Profile template commands
+export async function listProfileTemplates(): Promise<ProfileTemplateInfo[]> {
+  return invoke("list_profile_templates");
+}
+
+export async function getProfileTemplate(templateId: string): Promise<ProfileTemplateInfo> {
+  return invoke("get_profile_template", { templateId });
+}
+
+export async function previewProfile(templateId: string): Promise<string> {
+  return invoke("preview_profile", { templateId });
+}
+
+export async function installProfileTemplate(templateId: string): Promise<void> {
+  return invoke("install_profile_template", { templateId });
+}
+
+export async function uninstallProfileTemplate(templateId: string): Promise<void> {
+  return invoke("uninstall_profile_template", { templateId });
+}
+
+export async function syncInstalledProfiles(): Promise<SyncResultInfo[]> {
+  return invoke("sync_installed_profiles");
+}
+
+export async function getProfileTemplateConfig(templateId: string): Promise<ProfileTemplateConfig> {
+  return invoke("get_profile_template_config", { templateId });
+}
+
+export async function setProfileTemplateConfig(templateId: string, configValues: Record<string, string>): Promise<void> {
+  return invoke("set_profile_template_config", { templateId, configValues });
 }
 
 // Config commands

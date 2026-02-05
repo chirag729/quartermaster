@@ -1,6 +1,6 @@
 # Architecture
 
-Anvil is a Tauri 2 desktop application for provisioning and managing local and remote Linux machines. The frontend is built with React 18 and TypeScript, the backend with Rust and Tokio, and they communicate via Tauri's IPC invoke/event system.
+Quartermaster is a Tauri 2 desktop application for provisioning and managing local and remote Linux machines. The frontend is built with React 18 and TypeScript, the backend with Rust and Tokio, and they communicate via Tauri's IPC invoke/event system.
 
 ## Technology Stack
 
@@ -69,7 +69,7 @@ pub struct AppState {
 State is initialized in `lib.rs::run()` and injected into all Tauri commands via `manage()`.
 
 - **registry** -- Read-only after initialization. Contains all registered `SetupTask` implementations.
-- **config** -- Thread-safe access to persistent configuration (`~/.config/anvil/config.json`).
+- **config** -- Thread-safe access to persistent configuration (`~/.config/quartermaster/config.json`).
 - **monitor_running** -- Boolean flag controlling the AppArmor audit log monitor.
 - **fleet_manager** -- Manages the set of fleet nodes (local and remote machines).
 - **blueprint_manager** -- Manages blueprint definitions (built-in and user-created).
@@ -105,7 +105,7 @@ When a blueprint is applied, the system checks the target node's `NodeKind`:
 
 Configuration for tasks follows a merge strategy:
 
-1. **Global task defaults** -- Stored in `~/.config/anvil/config.json` under `task_configs`.
+1. **Global task defaults** -- Stored in `~/.config/quartermaster/config.json` under `task_configs`.
 2. **Blueprint config overrides** -- Each `BlueprintTaskEntry` can specify `config_overrides`.
 
 At execution time, the base config is loaded first, then blueprint overrides are merged on top. This allows the same task to behave differently depending on which blueprint is being applied.
@@ -130,10 +130,10 @@ The frontend subscribes via `listen()` from `@tauri-apps/api/event`, wrapped in 
 Operations requiring root privileges (AppArmor profile modification, PolicyKit policy installation) go through `pkexec` rather than running the entire application as root. The `polkit/auth.rs` module provides:
 
 - `execute_privileged(command, args)` -- Runs commands via `pkexec`
-- `is_policy_installed()` -- Checks for the policy file at `/usr/share/polkit-1/actions/com.anvil.policy`
-- `is_helper_installed()` -- Checks for the helper script at `/usr/lib/anvil/anvil-apparmor-helper`
+- `is_policy_installed()` -- Checks for the policy file at `/usr/share/polkit-1/actions/com.quartermaster.policy`
+- `is_helper_installed()` -- Checks for the helper script at `/usr/lib/quartermaster/quartermaster-apparmor-helper`
 
-AppArmor operations use a dedicated helper script (`anvil-apparmor-helper`) registered with the `com.anvil.apparmor-manage` PolicyKit action. The `org.freedesktop.policykit.exec.path` annotation links the helper to the action's `auth_admin_keep` policy, enabling credential caching (~5 minutes). This means the user is prompted for their password once, and subsequent AppArmor operations within the cache window require no further prompts.
+AppArmor operations use a dedicated helper script (`quartermaster-apparmor-helper`) registered with the `com.quartermaster.apparmor-manage` PolicyKit action. The `org.freedesktop.policykit.exec.path` annotation links the helper to the action's `auth_admin_keep` policy, enabling credential caching (~5 minutes). This means the user is prompted for their password once, and subsequent AppArmor operations within the cache window require no further prompts.
 
 ### 5. Independent Zustand stores
 
@@ -192,13 +192,13 @@ pub enum AppError {
 
 ## Data Persistence
 
-All persistent data is stored under `~/.config/anvil/`:
+All persistent data is stored under `~/.config/quartermaster/`:
 
 | Path | Contents |
 |------|----------|
-| `~/.config/anvil/config.json` | Application configuration (theme, task configs, completed tasks) |
-| `~/.config/anvil/nodes/*.json` | Fleet node definitions (one file per node) |
-| `~/.config/anvil/blueprints/*.json` | Blueprint definitions (one file per blueprint) |
+| `~/.config/quartermaster/config.json` | Application configuration (theme, task configs, completed tasks) |
+| `~/.config/quartermaster/nodes/*.json` | Fleet node definitions (one file per node) |
+| `~/.config/quartermaster/blueprints/*.json` | Blueprint definitions (one file per blueprint) |
 
 ## Frontend-Backend Communication
 

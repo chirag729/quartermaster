@@ -1,0 +1,61 @@
+id: android-sdk
+name: Android SDK
+description: Confine Android SDK tools and build processes
+task_id: android-sdk
+profile_name: quartermaster.android-sdk
+mode: complain
+
+variables:
+  - key: projects_path
+    label: Projects Directory
+    type: path
+    default: "~/Development/Projects"
+
+content: |
+  abi <abi/4.0>,
+  include <tunables/global>
+
+  profile android-sdk {{sdk_base_path}}/android-sdk/cmdline-tools/latest/bin/* flags=({{mode}}) {
+    include <abstractions/base>
+    include <abstractions/nameservice>
+
+    # Android SDK read + execute
+    {{sdk_base_path}}/android-sdk/** rmix,
+    {{sdk_base_path}}/android-sdk/ r,
+
+    # Android user config and caches
+    {{home}}/.android/** rwk,
+    {{home}}/.android/ r,
+    {{home}}/.gradle/** rwk,
+    {{home}}/.gradle/ r,
+
+    # Project workspace
+    {{projects_path}}/** rwk,
+    {{projects_path}}/ r,
+
+    # Networking for SDK downloads and builds
+    network inet stream,
+    network inet dgram,
+    network inet6 stream,
+    network inet6 dgram,
+
+    # JVM execution
+    /usr/lib/jvm/** rmix,
+    /usr/lib64/jvm/** rmix,
+
+    # System libraries
+    /usr/lib/** rm,
+    /usr/lib64/** rm,
+    /lib/** rm,
+    /lib64/** rm,
+
+    # Temp files
+    /tmp/** rwk,
+
+    # Process info
+    @{PROC}/self/** r,
+
+    # Device access
+    /dev/null rw,
+    /dev/urandom r,
+  }

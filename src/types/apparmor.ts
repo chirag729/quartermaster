@@ -52,3 +52,47 @@ export interface ConsolidationResult {
   profile: string;
   rules: ConsolidatedRule[];
 }
+
+// Profile template types
+
+export type ProfileTemplateStatus = "not_installed" | "installed" | "stale" | "task_not_completed";
+
+export interface ProfileVariable {
+  key: string;
+  label: string;
+  var_type: string;
+  default: string;
+  options?: string[];
+}
+
+export interface ProfileTemplateInfo {
+  id: string;
+  name: string;
+  description: string;
+  task_id: string;
+  profile_name: string;
+  mode: string;
+  variables: ProfileVariable[];
+  status: ProfileTemplateStatus;
+}
+
+export interface ResolvedConfigField {
+  key: string;
+  label: string;
+  field_type: string;
+  value: string;
+  default: string;
+  options?: string[];
+  source: "task" | "profile";
+}
+
+export interface ProfileTemplateConfig {
+  template_id: string;
+  fields: ResolvedConfigField[];
+}
+
+export interface SyncResultInfo {
+  profile_id: string;
+  profile_name: string;
+  updated: boolean;
+}

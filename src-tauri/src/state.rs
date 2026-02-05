@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use crate::apparmor::template_manager::ProfileTemplateManager;
 use crate::blueprints::manager::BlueprintManager;
 use crate::config::manager::ConfigManager;
 use crate::fleet::manager::FleetManager;
@@ -12,4 +13,5 @@ pub struct AppState {
     pub monitor_running: Arc<Mutex<bool>>,
     pub fleet_manager: Arc<Mutex<FleetManager>>,
     pub blueprint_manager: Arc<Mutex<BlueprintManager>>,
+    pub profile_templates: Arc<ProfileTemplateManager>,
 }

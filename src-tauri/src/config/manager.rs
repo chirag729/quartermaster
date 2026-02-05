@@ -6,6 +6,14 @@ use serde_json::Value;
 use crate::error::AppError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstalledProfileState {
+    pub profile_id: String,
+    pub profile_name: String,
+    pub config_snapshot: HashMap<String, String>,
+    pub installed_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigData {
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -13,6 +21,10 @@ pub struct ConfigData {
     pub task_configs: HashMap<String, HashMap<String, Value>>,
     #[serde(default)]
     pub completed_tasks: Vec<String>,
+    #[serde(default)]
+    pub profile_configs: HashMap<String, HashMap<String, Value>>,
+    #[serde(default)]
+    pub installed_profiles: HashMap<String, InstalledProfileState>,
     // Legacy field for migration
     #[serde(default, skip_serializing)]
     pub module_configs: Option<HashMap<String, HashMap<String, Value>>>,
@@ -30,6 +42,8 @@ impl Default for ConfigData {
             theme: default_theme(),
             task_configs: HashMap::new(),
             completed_tasks: Vec::new(),
+            profile_configs: HashMap::new(),
+            installed_profiles: HashMap::new(),
             module_configs: None,
             completed_modules: None,
         }
@@ -54,7 +68,7 @@ impl ConfigManager {
     fn config_path() -> PathBuf {
         let config_dir = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("~/.config"))
-            .join("anvil");
+            .join("quartermaster");
         config_dir.join("config.json")
     }
 
@@ -139,6 +153,8 @@ mod tests {
                 theme: "dark".to_string(),
                 task_configs: HashMap::new(),
                 completed_tasks: vec!["flutter-sdk".to_string()],
+                profile_configs: HashMap::new(),
+                installed_profiles: HashMap::new(),
                 module_configs: None,
                 completed_modules: None,
             },

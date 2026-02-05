@@ -1,6 +1,6 @@
 # Adding Tasks
 
-This guide covers how to add a new setup task to Anvil. Tasks are the fundamental unit of work -- each task performs a single provisioning action (installing a tool, creating a directory, configuring a service, etc.) and can run on local or remote machines via the `CommandExecutor` abstraction.
+This guide covers how to add a new setup task to Quartermaster. Tasks are the fundamental unit of work -- each task performs a single provisioning action (installing a tool, creating a directory, configuring a service, etc.) and can run on local or remote machines via the `CommandExecutor` abstraction.
 
 ## Overview
 

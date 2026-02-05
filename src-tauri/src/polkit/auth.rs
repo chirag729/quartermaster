@@ -16,9 +16,9 @@ pub async fn execute_privileged(command: &str, args: &[&str]) -> Result<String, 
 }
 
 pub fn is_policy_installed() -> bool {
-    std::path::Path::new("/usr/share/polkit-1/actions/com.anvil.policy").exists()
+    std::path::Path::new("/usr/share/polkit-1/actions/com.quartermaster.policy").exists()
 }
 
 pub fn is_helper_installed() -> bool {
-    std::path::Path::new("/usr/lib/anvil/anvil-apparmor-helper").exists()
+    std::path::Path::new("/usr/lib/quartermaster/quartermaster-apparmor-helper").exists()
 }

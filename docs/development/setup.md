@@ -4,7 +4,7 @@
 
 ### System dependencies
 
-Anvil is a Tauri 2 application. On Ubuntu/Debian, install the following system packages:
+Quartermaster is a Tauri 2 application. On Ubuntu/Debian, install the following system packages:
 
 ```bash
 sudo apt update
@@ -41,7 +41,7 @@ Ensure `cargo` and `rustc` are on your PATH after installation.
 
 ```bash
 git clone <repository-url>
-cd anvil
+cd quartermaster
 npm install
 ```
 

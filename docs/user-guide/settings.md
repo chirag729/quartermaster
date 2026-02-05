@@ -2,13 +2,13 @@
 
 ## Theme
 
-Anvil supports three theme modes:
+Quartermaster supports three theme modes:
 
 | Mode | Behavior |
 |------|----------|
 | **Light** | Always uses the light color scheme |
 | **Dark** | Always uses the dark color scheme |
-| **System** | Automatically matches the operating system's current theme preference. If the OS switches between light and dark mode, Anvil follows. |
+| **System** | Automatically matches the operating system's current theme preference. If the OS switches between light and dark mode, Quartermaster follows. |
 
 The theme setting takes effect immediately. It is persisted across sessions.
 
@@ -33,7 +33,7 @@ The precedence order is:
 
 ## Config Persistence
 
-Application state is stored under `~/.config/anvil/`:
+Application state is stored under `~/.config/quartermaster/`:
 
 | Path | Contents |
 |------|----------|
@@ -43,11 +43,11 @@ Application state is stored under `~/.config/anvil/`:
 
 The config file is read at startup and written whenever settings change. Node and blueprint files are managed by the `FleetManager` and `BlueprintManager` respectively.
 
-These files are human-readable JSON, but manual editing is not recommended; use the Anvil UI to make changes.
+These files are human-readable JSON, but manual editing is not recommended; use the Quartermaster UI to make changes.
 
 ### Backup
 
-To back up your Anvil configuration, copy the entire `~/.config/anvil/` directory. To restore, replace the directory contents and restart Anvil.
+To back up your Quartermaster configuration, copy the entire `~/.config/quartermaster/` directory. To restore, replace the directory contents and restart Quartermaster.
 
 ## Auto-migration from Legacy Path
 
@@ -57,7 +57,7 @@ If you previously used an earlier version of the application that stored its con
 ~/.config/machine-setup/
 ```
 
-Anvil automatically migrates data from the legacy path to `~/.config/anvil/` on first launch. The migration:
+Quartermaster automatically migrates data from the legacy path to `~/.config/quartermaster/` on first launch. The migration:
 
 - Copies existing configuration to the new location.
 - Preserves all settings, task configs, and fleet data.

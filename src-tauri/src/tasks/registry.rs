@@ -118,7 +118,7 @@ impl TaskRegistry {
 
 fn user_tasks_dir() -> PathBuf {
     let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("~/.config"));
-    base.join("anvil").join("tasks")
+    base.join("quartermaster").join("tasks")
 }
 
 fn load_and_validate_task(path: &std::path::Path) -> Result<ScriptTask, String> {
@@ -144,7 +144,7 @@ pub fn create_registry() -> TaskRegistry {
         registry.register(Box::new(ScriptTask::new(def)));
     }
 
-    // Load user tasks from ~/.config/anvil/tasks/
+    // Load user tasks from ~/.config/quartermaster/tasks/
     let user_dir = user_tasks_dir();
     if let Ok(entries) = std::fs::read_dir(&user_dir) {
         for entry in entries.flatten() {

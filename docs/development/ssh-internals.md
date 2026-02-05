@@ -1,6 +1,6 @@
 # SSH Internals
 
-This document covers the SSH and remote execution internals of Anvil, including the CommandExecutor abstraction, the local and SSH executor implementations, and the SSH management commands.
+This document covers the SSH and remote execution internals of Quartermaster, including the CommandExecutor abstraction, the local and SSH executor implementations, and the SSH management commands.
 
 ## CommandExecutor Trait
 

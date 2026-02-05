@@ -2,13 +2,13 @@
 
 ## Overview
 
-Anvil includes a built-in AppArmor management tool for viewing denial logs, generating permission rules, and applying profile changes. This feature helps you diagnose and resolve AppArmor permission issues without manually editing profile files.
+Quartermaster includes a built-in AppArmor management tool for viewing denial logs, generating permission rules, and applying profile changes. This feature helps you diagnose and resolve AppArmor permission issues without manually editing profile files.
 
 **This feature is local-only.** AppArmor management operates exclusively on the local node and is not available for remote nodes.
 
 ## Viewing Denial Logs
 
-Anvil reads AppArmor denial entries from:
+Quartermaster reads AppArmor denial entries from:
 
 ```
 /var/log/audit/audit.log
@@ -26,7 +26,7 @@ This gives you a clear view of what AppArmor is blocking and which profiles are 
 
 ## Real-time Log Monitoring
 
-For active debugging, Anvil can monitor the audit log in real time:
+For active debugging, Quartermaster can monitor the audit log in real time:
 
 - **Start monitoring** -- Begins tailing the audit log and displaying new denial entries as they occur.
 - **Stop monitoring** -- Stops the real-time tail.
@@ -35,7 +35,7 @@ This is useful when reproducing an issue: start monitoring, trigger the action t
 
 ## Rule Suggestions
 
-When you view a denial, Anvil can suggest a permission rule to resolve it. Each suggestion includes a **risk level** assessment:
+When you view a denial, Quartermaster can suggest a permission rule to resolve it. Each suggestion includes a **risk level** assessment:
 
 | Risk Level | Meaning |
 |------------|---------|
@@ -44,11 +44,11 @@ When you view a denial, Anvil can suggest a permission rule to resolve it. Each 
 | **High** | The rule grants a broad permission that may weaken the profile's security posture. Apply with caution. |
 | **Critical** | The rule grants a very broad or sensitive permission (e.g., unrestricted network access, write to system paths). Carefully evaluate whether this is necessary. |
 
-Suggestions are generated based on the denied operation and target resource. Anvil attempts to create the narrowest rule that resolves the denial.
+Suggestions are generated based on the denied operation and target resource. Quartermaster attempts to create the narrowest rule that resolves the denial.
 
 ## PolicyKit Setup
 
-AppArmor profile modification requires root privileges. Before using AppArmor management, install Anvil's PolicyKit policy:
+AppArmor profile modification requires root privileges. Before using AppArmor management, install Quartermaster's PolicyKit policy:
 
 1. Navigate to **Settings**.
 2. Click **Install PolicyKit Policy**.
@@ -62,7 +62,7 @@ To apply a suggested rule:
 
 1. Review the rule and its risk level.
 2. Click **Apply Rule**.
-3. Anvil uses the privileged helper script (via PolicyKit) to write the rule to the appropriate AppArmor profile. You will be prompted for authentication if credentials are not cached.
+3. Quartermaster uses the privileged helper script (via PolicyKit) to write the rule to the appropriate AppArmor profile. You will be prompted for authentication if credentials are not cached.
 4. The profile is reloaded so the change takes effect immediately.
 
 ## Profile Listing and Detail View
@@ -77,7 +77,7 @@ Click a profile to open its detail view, where you can inspect individual rules 
 
 ## Rule Consolidation
 
-Over time, applying individual rules can result in redundant or overlapping entries. Anvil provides rule consolidation to clean this up:
+Over time, applying individual rules can result in redundant or overlapping entries. Quartermaster provides rule consolidation to clean this up:
 
 - **Group similar rules** -- Rules that target the same resource type or path pattern are grouped together.
 - **Merge overlapping permissions** -- If multiple rules grant different permissions to the same path, they are merged into a single, combined rule.
@@ -90,7 +90,7 @@ After consolidation or manual edits, you can rewrite a profile:
 
 1. Open the profile detail view.
 2. Click **Rewrite Profile**.
-3. Anvil regenerates the profile file with the current set of rules, properly formatted and ordered.
+3. Quartermaster regenerates the profile file with the current set of rules, properly formatted and ordered.
 4. The rewrite is applied via PolicyKit and the profile is reloaded.
 
 ## Batch Rule Application

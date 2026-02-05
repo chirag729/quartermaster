@@ -1,0 +1,71 @@
+id: claude-code
+name: Claude Code
+description: Confine Claude Code CLI to project workspace and configuration
+task_id: claude-code
+profile_name: quartermaster.claude-code
+mode: complain
+
+variables:
+  - key: projects_path
+    label: Projects Directory
+    type: path
+    default: "~/Development/Projects"
+
+content: |
+  abi <abi/4.0>,
+  include <tunables/global>
+
+  profile claude-code /usr/local/bin/claude flags=({{mode}}) {
+    include <abstractions/base>
+    include <abstractions/nameservice>
+
+    # Node.js execution
+    /usr/bin/node rmix,
+    /usr/local/bin/node rmix,
+    {{home}}/.nvm/**/node rmix,
+
+    # npm global packages read + execute
+    /usr/lib/node_modules/** rm,
+    /usr/local/lib/node_modules/** rmix,
+    {{home}}/.npm/** rwk,
+    {{home}}/.npm/ r,
+
+    # Project workspace
+    {{projects_path}}/** rwk,
+    {{projects_path}}/ r,
+
+    # Claude config and data
+    {{home}}/.claude/** rwk,
+    {{home}}/.claude/ r,
+    {{home}}/.config/claude/** rwk,
+    {{home}}/.config/claude/ r,
+
+    # Git access
+    /usr/bin/git rmix,
+    /usr/lib/git-core/** rmix,
+    {{home}}/.gitconfig r,
+    {{home}}/.config/git/** r,
+
+    # Networking for API access
+    network inet stream,
+    network inet dgram,
+    network inet6 stream,
+    network inet6 dgram,
+
+    # System libraries
+    /usr/lib/** rm,
+    /usr/lib64/** rm,
+    /lib/** rm,
+    /lib64/** rm,
+
+    # Temp files
+    /tmp/** rwk,
+
+    # Process info
+    @{PROC}/self/** r,
+
+    # Device access
+    /dev/null rw,
+    /dev/urandom r,
+    /dev/tty rw,
+  }

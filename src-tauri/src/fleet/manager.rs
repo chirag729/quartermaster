@@ -18,7 +18,7 @@ impl FleetManager {
     pub fn load() -> Result<Self, AppError> {
         let base_dir = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("~/.config"));
-        let config_dir = base_dir.join("anvil").join("nodes");
+        let config_dir = base_dir.join("quartermaster").join("nodes");
 
         std::fs::create_dir_all(&config_dir)?;
 

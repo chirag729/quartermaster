@@ -230,7 +230,7 @@ Checks whether a PolicyKit action is registered on the system by running `pkacti
 is_polkit_policy_installed() -> bool
 ```
 
-Checks whether Anvil's PolicyKit policy file is installed at `/usr/share/polkit-1/actions/com.anvil.policy`.
+Checks whether Quartermaster's PolicyKit policy file is installed at `/usr/share/polkit-1/actions/com.quartermaster.policy`.
 
 **Returns:** `true` if the policy file exists.
 
@@ -240,7 +240,7 @@ Checks whether Anvil's PolicyKit policy file is installed at `/usr/share/polkit-
 is_apparmor_helper_installed() -> bool
 ```
 
-Checks whether Anvil's AppArmor helper script is installed at `/usr/lib/anvil/anvil-apparmor-helper`.
+Checks whether Quartermaster's AppArmor helper script is installed at `/usr/lib/quartermaster/quartermaster-apparmor-helper`.
 
 **Returns:** `true` if the helper script exists.
 
@@ -250,12 +250,12 @@ Checks whether Anvil's AppArmor helper script is installed at `/usr/lib/anvil/an
 install_polkit_policy() -> ()
 ```
 
-Installs Anvil's PolicyKit policy file and AppArmor helper script from the bundled resources:
+Installs Quartermaster's PolicyKit policy file and AppArmor helper script from the bundled resources:
 
-1. Copies `com.anvil.policy` to `/usr/share/polkit-1/actions/` using `pkexec cp`.
-2. If the bundled `anvil-apparmor-helper` script exists, installs it to `/usr/lib/anvil/` with root ownership and mode 755 via a single `pkexec bash -c` call.
+1. Copies `com.quartermaster.policy` to `/usr/share/polkit-1/actions/` using `pkexec cp`.
+2. If the bundled `quartermaster-apparmor-helper` script exists, installs it to `/usr/lib/quartermaster/` with root ownership and mode 755 via a single `pkexec bash -c` call.
 
-The helper script is registered with the `com.anvil.apparmor-manage` PolicyKit action via `org.freedesktop.policykit.exec.path`, enabling `auth_admin_keep` credential caching for AppArmor operations.
+The helper script is registered with the `com.quartermaster.apparmor-manage` PolicyKit action via `org.freedesktop.policykit.exec.path`, enabling `auth_admin_keep` credential caching for AppArmor operations.
 
 **Errors:** `AppError::Other` if the bundled policy file is not found, or `AppError::Polkit` if the privileged commands fail.
 

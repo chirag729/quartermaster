@@ -1,6 +1,6 @@
 # Adding Default Blueprints
 
-Blueprints are ordered collections of tasks that can be applied to a node as a group. Anvil ships with built-in default blueprints that are created on first launch. This guide covers how to add new default blueprints.
+Blueprints are ordered collections of tasks that can be applied to a node as a group. Quartermaster ships with built-in default blueprints that are created on first launch. This guide covers how to add new default blueprints.
 
 ## Overview
 
@@ -93,7 +93,7 @@ pub fn create_default_blueprints() -> Vec<Blueprint> {
 
 ### 3. When defaults appear
 
-Default blueprints are only created when the blueprints directory (`~/.config/anvil/blueprints/`) is empty. This happens:
+Default blueprints are only created when the blueprints directory (`~/.config/quartermaster/blueprints/`) is empty. This happens:
 
 - On a **fresh install** (no prior config exists).
 - If the user **manually deletes all blueprint JSON files** from the config directory.

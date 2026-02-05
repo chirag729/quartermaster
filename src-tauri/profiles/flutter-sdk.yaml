@@ -1,0 +1,55 @@
+id: flutter-sdk
+name: Flutter SDK
+description: Confine Flutter SDK tools to their SDK directory and project workspace
+task_id: flutter-sdk
+profile_name: quartermaster.flutter
+mode: complain
+
+variables:
+  - key: projects_path
+    label: Projects Directory
+    type: path
+    default: "~/Development/Projects"
+
+content: |
+  abi <abi/4.0>,
+  include <tunables/global>
+
+  profile flutter {{sdk_base_path}}/flutter/bin/flutter flags=({{mode}}) {
+    include <abstractions/base>
+    include <abstractions/nameservice>
+
+    # Flutter SDK read + execute
+    {{sdk_base_path}}/flutter/** rmix,
+    {{sdk_base_path}}/flutter/ r,
+
+    # Dart pub cache
+    {{home}}/.pub-cache/** rwk,
+    {{home}}/.pub-cache/ r,
+
+    # Project workspace
+    {{projects_path}}/** rwk,
+    {{projects_path}}/ r,
+
+    # Networking for pub get, etc.
+    network inet stream,
+    network inet dgram,
+    network inet6 stream,
+    network inet6 dgram,
+
+    # Temp files
+    /tmp/** rwk,
+
+    # System libraries and shared objects
+    /usr/lib/** rm,
+    /usr/lib64/** rm,
+    /lib/** rm,
+    /lib64/** rm,
+
+    # Process info
+    @{PROC}/self/** r,
+
+    # Device access for flutter run
+    /dev/null rw,
+    /dev/urandom r,
+  }

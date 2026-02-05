@@ -21,9 +21,11 @@ fn main() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let tasks_dir = Path::new(&manifest_dir).join("tasks");
     let blueprints_dir = Path::new(&manifest_dir).join("blueprints");
+    let profiles_dir = Path::new(&manifest_dir).join("profiles");
 
     let task_files = collect_yaml_files(&tasks_dir);
     let blueprint_files = collect_yaml_files(&blueprints_dir);
+    let profile_files = collect_yaml_files(&profiles_dir);
 
     let out_dir = std::env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("embedded.rs");
@@ -41,6 +43,12 @@ fn main() {
     for file in &blueprint_files {
         code.push_str(&format!("    include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/blueprints/{}\")),\n", file));
     }
+    code.push_str("];\n\n");
+
+    code.push_str("pub const BUILTIN_PROFILE_YAMLS: &[&str] = &[\n");
+    for file in &profile_files {
+        code.push_str(&format!("    include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/profiles/{}\")),\n", file));
+    }
     code.push_str("];\n");
 
     fs::write(&dest_path, code).expect("Failed to write embedded.rs");
@@ -48,6 +56,7 @@ fn main() {
     // Re-run build script if YAML files change
     println!("cargo:rerun-if-changed=tasks/");
     println!("cargo:rerun-if-changed=blueprints/");
+    println!("cargo:rerun-if-changed=profiles/");
 
     tauri_build::build()
 }

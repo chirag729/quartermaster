@@ -2,7 +2,7 @@
 
 ## Project
 
-Anvil - a Tauri 2 desktop app (React + Rust) for provisioning and managing local and remote Linux machines, automating development environment setup, and managing AppArmor profiles.
+Quartermaster - a Tauri 2 desktop app (React + Rust) for provisioning and managing local and remote Linux machines, automating development environment setup, and managing AppArmor profiles.
 
 ## Quick Reference
 
@@ -38,7 +38,7 @@ cd src-tauri && cargo test  # Run Rust unit tests
 | `src-tauri/src/blueprints/` | Blueprint model, manager, defaults |
 | `src-tauri/src/apparmor/` | Log parsing, rule generation, profile management, real-time monitoring |
 | `src-tauri/src/polkit/` | PolicyKit authorization and privilege escalation |
-| `src-tauri/src/config/` | ConfigManager - persistent config at ~/.config/anvil/ |
+| `src-tauri/src/config/` | ConfigManager - persistent config at ~/.config/quartermaster/ |
 
 ## Conventions
 
@@ -71,4 +71,4 @@ cd src-tauri && cargo test  # Run Rust unit tests
 - Vite config: `vite.config.ts` (dev port 1420, path aliases)
 - TypeScript: `tsconfig.json` (strict, ES2020 target)
 - Vitest: `vitest.config.ts` (jsdom environment, setup file at `src/__tests__/setup.ts`)
-- App data: `~/.config/anvil/` (config.json, nodes/, blueprints/)
+- App data: `~/.config/quartermaster/` (config.json, nodes/, blueprints/)

@@ -49,7 +49,7 @@ export function Sidebar() {
     <aside className="w-60 h-screen flex flex-col border-r border-border-light dark:border-border-dark bg-sidebar-light dark:bg-sidebar-dark">
       <div className="p-6">
         <h1 className="text-lg font-semibold text-text-primary-light dark:text-text-primary-dark">
-          Anvil
+          Quartermaster
         </h1>
         <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark mt-1">
           Infrastructure Builder

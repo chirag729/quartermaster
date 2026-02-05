@@ -20,7 +20,7 @@ impl BlueprintManager {
     pub fn load() -> Result<Self, AppError> {
         let base_dir = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("~/.config"));
-        let config_dir = base_dir.join("anvil").join("blueprints");
+        let config_dir = base_dir.join("quartermaster").join("blueprints");
 
         std::fs::create_dir_all(&config_dir)?;
 
@@ -52,7 +52,7 @@ impl BlueprintManager {
             }
         }
 
-        // Migrate existing JSON files in the anvil directory to YAML
+        // Migrate existing JSON files in the quartermaster directory to YAML
         manager.migrate_json_to_yaml()?;
 
         if manager.blueprints.is_empty() {

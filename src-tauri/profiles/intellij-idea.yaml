@@ -1,0 +1,85 @@
+id: intellij-idea
+name: IntelliJ IDEA
+description: Confine IntelliJ IDEA IDE to project workspace and SDK directories
+task_id: intellij-idea
+profile_name: quartermaster.intellij-idea
+mode: complain
+
+variables:
+  - key: projects_path
+    label: Projects Directory
+    type: path
+    default: "~/Development/Projects"
+  - key: sdk_base_path
+    label: SDK Base Directory
+    type: path
+    default: "~/SDK"
+
+content: |
+  abi <abi/4.0>,
+  include <tunables/global>
+
+  profile intellij-idea /snap/intellij-idea-{{edition}}/current/bin/idea flags=({{mode}}) {
+    include <abstractions/base>
+    include <abstractions/nameservice>
+    include <abstractions/X>
+    include <abstractions/wayland>
+
+    # IntelliJ snap directory read + execute
+    /snap/intellij-idea-{{edition}}/** rmix,
+    /snap/intellij-idea-{{edition}}/ r,
+
+    # Project workspace
+    {{projects_path}}/** rwk,
+    {{projects_path}}/ r,
+
+    # SDK directories read + execute
+    {{sdk_base_path}}/** rmix,
+    {{sdk_base_path}}/ r,
+
+    # JetBrains config and caches
+    {{home}}/.config/JetBrains/** rwk,
+    {{home}}/.config/JetBrains/ r,
+    {{home}}/.local/share/JetBrains/** rwk,
+    {{home}}/.local/share/JetBrains/ r,
+    {{home}}/.cache/JetBrains/** rwk,
+    {{home}}/.cache/JetBrains/ r,
+    {{home}}/.java/** rwk,
+    {{home}}/.java/ r,
+
+    # Git access
+    /usr/bin/git rmix,
+    /usr/lib/git-core/** rmix,
+    {{home}}/.gitconfig r,
+    {{home}}/.config/git/** r,
+
+    # JVM execution
+    /usr/lib/jvm/** rmix,
+    /usr/lib64/jvm/** rmix,
+
+    # Networking
+    network inet stream,
+    network inet dgram,
+    network inet6 stream,
+    network inet6 dgram,
+
+    # System libraries
+    /usr/lib/** rm,
+    /usr/lib64/** rm,
+    /lib/** rm,
+    /lib64/** rm,
+
+    # Display and graphics
+    /dev/dri/** rw,
+    /sys/devices/** r,
+
+    # Process info
+    @{PROC}/** r,
+
+    # Temp files
+    /tmp/** rwk,
+
+    # Device access
+    /dev/null rw,
+    /dev/urandom r,
+  }

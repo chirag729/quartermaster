@@ -12,6 +12,7 @@ pub mod state;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use apparmor::template_manager::ProfileTemplateManager;
 use blueprints::manager::BlueprintManager;
 use config::manager::ConfigManager;
 use fleet::manager::FleetManager;
@@ -26,6 +27,7 @@ pub fn run() {
         .expect("Failed to initialize fleet manager");
     let blueprint_manager = BlueprintManager::load()
         .expect("Failed to initialize blueprint manager");
+    let profile_templates = ProfileTemplateManager::load();
 
     let app_state = AppState {
         registry: Arc::new(registry),
@@ -33,6 +35,7 @@ pub fn run() {
         monitor_running: Arc::new(Mutex::new(false)),
         fleet_manager: Arc::new(Mutex::new(fleet_manager)),
         blueprint_manager: Arc::new(Mutex::new(blueprint_manager)),
+        profile_templates: Arc::new(profile_templates),
     };
 
     tauri::Builder::default()
@@ -52,6 +55,14 @@ pub fn run() {
             commands::apparmor::apply_permission_rules_batch,
             commands::apparmor::consolidate_profile_rules,
             commands::apparmor::rewrite_profile_rules,
+            commands::apparmor::list_profile_templates,
+            commands::apparmor::get_profile_template,
+            commands::apparmor::preview_profile,
+            commands::apparmor::install_profile_template,
+            commands::apparmor::uninstall_profile_template,
+            commands::apparmor::sync_installed_profiles,
+            commands::apparmor::get_profile_template_config,
+            commands::apparmor::set_profile_template_config,
             commands::config::get_config,
             commands::config::set_config,
             commands::system::get_system_info,

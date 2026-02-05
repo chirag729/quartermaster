@@ -56,6 +56,14 @@ case "${1:-}" in
             apparmor_parser -r "$profile"
         done
         ;;
+    remove-and-unload)
+        [ $# -eq 2 ] || { echo "Usage: remove-and-unload PROFILE_PATH" >&2; exit 1; }
+        validate_profile_path "$2"
+        if [ -f "$2" ]; then
+            apparmor_parser -R "$2" 2>/dev/null || true
+            rm -f "$2"
+        fi
+        ;;
     *)
         echo "Unknown command: ${1:-}" >&2
         exit 1

@@ -61,7 +61,7 @@ pub async fn install_polkit_policy(app: tauri::AppHandle) -> Result<(), AppError
         .join("resources");
 
     // Install PolicyKit policy
-    let policy_source = resource_dir.join("com.anvil.policy");
+    let policy_source = resource_dir.join("com.quartermaster.policy");
     if !policy_source.exists() {
         return Err(AppError::Other(format!(
             "Policy file not found at: {}",
@@ -69,14 +69,14 @@ pub async fn install_polkit_policy(app: tauri::AppHandle) -> Result<(), AppError
         )));
     }
 
-    let policy_dest = "/usr/share/polkit-1/actions/com.anvil.policy";
+    let policy_dest = "/usr/share/polkit-1/actions/com.quartermaster.policy";
     auth::execute_privileged("cp", &[&policy_source.to_string_lossy(), policy_dest]).await?;
 
     // Install AppArmor helper script (single pkexec call)
-    let helper_source = resource_dir.join("anvil-apparmor-helper");
+    let helper_source = resource_dir.join("quartermaster-apparmor-helper");
     if helper_source.exists() {
         let script = format!(
-            "mkdir -p /usr/lib/anvil && cp -- '{}' /usr/lib/anvil/anvil-apparmor-helper && chmod 755 /usr/lib/anvil/anvil-apparmor-helper && chown root:root /usr/lib/anvil/anvil-apparmor-helper",
+            "mkdir -p /usr/lib/quartermaster && cp -- '{}' /usr/lib/quartermaster/quartermaster-apparmor-helper && chmod 755 /usr/lib/quartermaster/quartermaster-apparmor-helper && chown root:root /usr/lib/quartermaster/quartermaster-apparmor-helper",
             helper_source.to_string_lossy().replace('\'', "'\\''")
         );
         auth::execute_privileged("bash", &["-c", &script]).await?;

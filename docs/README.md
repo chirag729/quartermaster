@@ -1,12 +1,12 @@
-# Anvil
+# Quartermaster
 
-Anvil is a Tauri 2 desktop application for provisioning and managing local and remote Linux machines. It provides a graphical interface for automating development environment setup, executing tasks across a fleet of nodes, and managing AppArmor security profiles.
+Quartermaster is a Tauri 2 desktop application for provisioning and managing local and remote Linux machines. It provides a graphical interface for automating development environment setup, executing tasks across a fleet of nodes, and managing AppArmor security profiles.
 
 ## Core Concepts
 
 | Concept | Name | Description |
 |---------|------|-------------|
-| Application | **Anvil** | The desktop app itself |
+| Application | **Quartermaster** | The desktop app itself |
 | Machine list | **Fleet** | The collection of all managed machines |
 | Individual machine | **Node** | A single local or remote Linux machine |
 | Machine profile | **Blueprint** | A reusable template defining which tasks to run on a node |
@@ -67,7 +67,7 @@ npm run tauri build  # Full desktop app build (.deb, .appimage)
 
 ## Configuration
 
-All persistent data is stored at `~/.config/anvil/`:
+All persistent data is stored at `~/.config/quartermaster/`:
 
 | Path | Purpose |
 |------|---------|

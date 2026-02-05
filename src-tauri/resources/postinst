@@ -1,12 +1,12 @@
 #!/bin/bash
 set -e
 
-RESOURCE_DIR="/usr/lib/anvil/resources/resources"
-POLICY_SOURCE="$RESOURCE_DIR/com.anvil.policy"
-POLICY_DEST="/usr/share/polkit-1/actions/com.anvil.policy"
-HELPER_SOURCE="$RESOURCE_DIR/anvil-apparmor-helper"
-HELPER_DIR="/usr/lib/anvil"
-HELPER_DEST="$HELPER_DIR/anvil-apparmor-helper"
+RESOURCE_DIR="/usr/lib/quartermaster/resources/resources"
+POLICY_SOURCE="$RESOURCE_DIR/com.quartermaster.policy"
+POLICY_DEST="/usr/share/polkit-1/actions/com.quartermaster.policy"
+HELPER_SOURCE="$RESOURCE_DIR/quartermaster-apparmor-helper"
+HELPER_DIR="/usr/lib/quartermaster"
+HELPER_DEST="$HELPER_DIR/quartermaster-apparmor-helper"
 
 # Install PolicyKit policy
 if [ -f "$POLICY_SOURCE" ]; then
