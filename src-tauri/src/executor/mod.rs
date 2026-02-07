@@ -1,5 +1,6 @@
 pub mod dry_run;
 pub mod local;
+pub mod privileged;
 pub mod ssh;
 
 use crate::error::AppError;

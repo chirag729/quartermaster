@@ -8,6 +8,7 @@ use crate::error::AppError;
 use crate::executor::CommandExecutor;
 use crate::executor::dry_run::{DryRunAction, DryRunExecutor};
 use crate::executor::local::LocalExecutor;
+use crate::executor::privileged::PrivilegedLocalExecutor;
 use crate::executor::ssh::SshExecutor;
 use crate::fleet::NodeKind;
 use crate::state::AppState;
@@ -175,10 +176,11 @@ pub async fn clone_blueprint(
 pub async fn create_blank_blueprint(
     name: String,
     description: String,
+    icon: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Blueprint, AppError> {
     let mut manager = state.blueprint_manager.lock().await;
-    manager.create_blueprint(name, description, "Layers".to_string(), vec![])
+    manager.create_blueprint(name, description, icon.unwrap_or_else(|| "Layers".to_string()), vec![])
 }
 
 #[tauri::command]
@@ -318,9 +320,9 @@ pub async fn apply_blueprint(
 
     let total = entries.len();
 
-    // Choose executor based on node kind
-    let exec: Box<dyn CommandExecutor> = match node.kind {
-        NodeKind::Local => Box::new(LocalExecutor::new()),
+    // For remote nodes, build the SSH executor once (shared across tasks)
+    let ssh_exec: Option<Box<dyn CommandExecutor>> = match node.kind {
+        NodeKind::Local => None,
         NodeKind::Remote => {
             let ssh_config = node.ssh_config.as_ref().ok_or_else(|| {
                 AppError::Ssh(format!("Remote node '{}' has no SSH configuration", node.name))
@@ -336,7 +338,7 @@ pub async fn apply_blueprint(
                 }
                 _ => None,
             };
-            Box::new(SshExecutor::from_ssh_config(ssh_config, vault_password.as_deref()))
+            Some(Box::new(SshExecutor::from_ssh_config(ssh_config, vault_password.as_deref())))
         }
     };
 
@@ -378,6 +380,17 @@ pub async fn apply_blueprint(
             }
         }
 
+        // Choose executor per task: privileged local for Admin tasks, regular for others
+        let exec: &dyn CommandExecutor = if let Some(ref ssh) = ssh_exec {
+            ssh.as_ref()
+        } else if task.privilege_level() == PrivilegeLevel::Admin {
+            // For local Admin tasks, we need a temporary PrivilegedLocalExecutor
+            // We use a nested block below to handle this
+            &PrivilegedLocalExecutor::new()
+        } else {
+            &LocalExecutor::new()
+        };
+
         // Merge config: base task config + blueprint overrides
         let config = state.config.lock().await;
         let mut task_config: HashMap<String, serde_json::Value> = config
@@ -405,7 +418,7 @@ pub async fn apply_blueprint(
         );
 
         // Detect state - skip if already completed
-        let status = task.detect_state(&task_config, exec.as_ref()).await;
+        let status = task.detect_state(&task_config, exec).await;
         if status == TaskStatus::Completed {
             continue;
         }
@@ -427,7 +440,7 @@ pub async fn apply_blueprint(
                 );
             });
 
-        task.execute(&task_config, exec.as_ref(), &progress_cb).await?;
+        task.execute(&task_config, exec, &progress_cb).await?;
 
         // Record installation state for this task
         {
@@ -708,9 +721,9 @@ pub async fn apply_blueprint_bulk(
             }),
         );
 
-        // Build the executor for this node
-        let exec: Box<dyn CommandExecutor> = match node.kind {
-            NodeKind::Local => Box::new(LocalExecutor::new()),
+        // Build the SSH executor for remote nodes (shared across tasks for this node)
+        let ssh_exec: Option<Box<dyn CommandExecutor>> = match node.kind {
+            NodeKind::Local => None,
             NodeKind::Remote => {
                 match node.ssh_config.as_ref() {
                     Some(ssh_config) => {
@@ -725,7 +738,7 @@ pub async fn apply_blueprint_bulk(
                             }
                             _ => None,
                         };
-                        Box::new(SshExecutor::from_ssh_config(ssh_config, vault_password.as_deref()))
+                        Some(Box::new(SshExecutor::from_ssh_config(ssh_config, vault_password.as_deref())))
                     }
                     None => {
                         results.push(BulkApplyResult {
@@ -783,6 +796,15 @@ pub async fn apply_blueprint_bulk(
                 }
             }
 
+            // Choose executor per task: privileged local for Admin tasks, regular for others
+            let exec: &dyn CommandExecutor = if let Some(ref ssh) = ssh_exec {
+                ssh.as_ref()
+            } else if task.privilege_level() == PrivilegeLevel::Admin {
+                &PrivilegedLocalExecutor::new()
+            } else {
+                &LocalExecutor::new()
+            };
+
             // Merge config: base task config + blueprint overrides
             let config = state.config.lock().await;
             let mut task_config: HashMap<String, serde_json::Value> = config
@@ -798,7 +820,7 @@ pub async fn apply_blueprint_bulk(
             }
 
             // Detect state - skip if already completed
-            let status = task.detect_state(&task_config, exec.as_ref()).await;
+            let status = task.detect_state(&task_config, exec).await;
             if status == TaskStatus::Completed {
                 continue;
             }
@@ -820,7 +842,7 @@ pub async fn apply_blueprint_bulk(
                     );
                 });
 
-            match task.execute(&task_config, exec.as_ref(), &progress_cb).await {
+            match task.execute(&task_config, exec, &progress_cb).await {
                 Ok(_) => {
                     // Record installation state for this task
                     {

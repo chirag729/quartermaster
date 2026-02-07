@@ -180,7 +180,7 @@ describe("blueprintStore", () => {
 
     const result = await useBlueprintStore.getState().createBlankBlueprint("Blank", "Empty");
 
-    expect(api.createBlankBlueprint).toHaveBeenCalledWith("Blank", "Empty");
+    expect(api.createBlankBlueprint).toHaveBeenCalledWith("Blank", "Empty", undefined);
     expect(result).toEqual(created);
     expect(useBlueprintStore.getState().blueprints).toHaveLength(1);
     expect(useBlueprintStore.getState().blueprints[0].id).toBe("bp-new");

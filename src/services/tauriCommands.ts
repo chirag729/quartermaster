@@ -380,8 +380,8 @@ export async function cloneBlueprint(id: string, newName: string): Promise<Bluep
   return invoke("clone_blueprint", { id, newName });
 }
 
-export async function createBlankBlueprint(name: string, description: string): Promise<Blueprint> {
-  return invoke("create_blank_blueprint", { name, description });
+export async function createBlankBlueprint(name: string, description: string, icon?: string): Promise<Blueprint> {
+  return invoke("create_blank_blueprint", { name, description, icon });
 }
 
 export async function deleteBlueprint(id: string): Promise<void> {

@@ -13,7 +13,7 @@ interface BlueprintState {
   updateBlueprint: (blueprint: Blueprint) => void;
   removeBlueprint: (id: string) => void;
   cloneBlueprint: (id: string, newName: string) => Promise<Blueprint>;
-  createBlankBlueprint: (name: string, description: string) => Promise<Blueprint>;
+  createBlankBlueprint: (name: string, description: string, icon?: string) => Promise<Blueprint>;
   deleteBlueprint: (id: string) => Promise<void>;
   assignBlueprint: (nodeId: string, blueprintId: string) => Promise<void>;
   unassignBlueprint: (nodeId: string) => Promise<void>;
@@ -49,8 +49,8 @@ export const useBlueprintStore = create<BlueprintState>((set) => ({
     }));
     return cloned;
   },
-  createBlankBlueprint: async (name, description) => {
-    const bp = await api.createBlankBlueprint(name, description);
+  createBlankBlueprint: async (name, description, icon?) => {
+    const bp = await api.createBlankBlueprint(name, description, icon);
     set((state) => ({
       blueprints: [...state.blueprints, bp],
     }));

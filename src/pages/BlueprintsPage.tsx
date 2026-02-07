@@ -50,10 +50,10 @@ export function BlueprintsPage() {
     loadBlueprints();
   }, [loadBlueprints]);
 
-  const handleCreateBlueprint = async (name: string, description: string) => {
+  const handleCreateBlueprint = async (name: string, description: string, icon?: string) => {
     setCreating(true);
     try {
-      const bp = await createBlankBlueprint(name, description);
+      const bp = await createBlankBlueprint(name, description, icon);
       setShowCreate(false);
       addToast({ type: "success", title: "Blueprint created", message: `Created "${bp.name}"` });
       navigate(`/blueprints/${bp.id}`);

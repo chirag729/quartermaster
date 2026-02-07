@@ -6,6 +6,7 @@ use tauri::{AppHandle, Emitter, State};
 use crate::error::AppError;
 use crate::executor::CommandExecutor;
 use crate::executor::local::LocalExecutor;
+use crate::executor::privileged::PrivilegedLocalExecutor;
 use crate::executor::ssh::SshExecutor;
 use crate::fleet::NodeKind;
 use crate::tasks::install_state;
@@ -196,9 +197,11 @@ pub async fn execute_task(
         _ => {}
     }
 
-    // Choose executor based on node kind
+    // Choose executor based on node kind and privilege level
+    let needs_privilege = task.privilege_level() == PrivilegeLevel::Admin;
     let exec: Box<dyn CommandExecutor> = if let Some(node) = node {
         match node.kind {
+            NodeKind::Local if needs_privilege => Box::new(PrivilegedLocalExecutor::new()),
             NodeKind::Local => Box::new(LocalExecutor::new()),
             NodeKind::Remote => {
                 let ssh_config = node.ssh_config.as_ref().ok_or_else(|| {
@@ -222,6 +225,8 @@ pub async fn execute_task(
                 ))
             }
         }
+    } else if needs_privilege {
+        Box::new(PrivilegedLocalExecutor::new())
     } else {
         Box::new(LocalExecutor::new())
     };
@@ -299,7 +304,8 @@ pub async fn uninstall_task(
         )));
     }
 
-    // Build executor
+    // Build executor (respects privilege level for local nodes)
+    let needs_privilege = task.privilege_level() == PrivilegeLevel::Admin;
     let exec: Box<dyn CommandExecutor> = if let Some(ref nid) = node_id {
         let fleet_manager = state.fleet_manager.lock().await;
         let node = fleet_manager
@@ -309,6 +315,7 @@ pub async fn uninstall_task(
         drop(fleet_manager);
 
         match node.kind {
+            NodeKind::Local if needs_privilege => Box::new(PrivilegedLocalExecutor::new()),
             NodeKind::Local => Box::new(LocalExecutor::new()),
             NodeKind::Remote => {
                 let ssh_config = node.ssh_config.as_ref().ok_or_else(|| {
@@ -335,6 +342,8 @@ pub async fn uninstall_task(
                 ))
             }
         }
+    } else if needs_privilege {
+        Box::new(PrivilegedLocalExecutor::new())
     } else {
         Box::new(LocalExecutor::new())
     };
