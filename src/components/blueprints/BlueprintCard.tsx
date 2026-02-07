@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Layers, ListChecks, Shield, Settings, Server, Monitor, type LucideIcon } from "lucide-react";
+import { Layers, ListChecks, Shield, Settings, Server, Monitor, Users, type LucideIcon } from "lucide-react";
 import { motion } from "motion/react";
 import type { Blueprint } from "../../types/blueprint";
 import { Badge } from "../ui/Badge";
@@ -15,9 +15,10 @@ const iconMap: Record<string, LucideIcon> = {
 
 interface BlueprintCardProps {
   blueprint: Blueprint;
+  assignedNodeCount?: number;
 }
 
-export function BlueprintCard({ blueprint }: BlueprintCardProps) {
+export function BlueprintCard({ blueprint, assignedNodeCount = 0 }: BlueprintCardProps) {
   const navigate = useNavigate();
   const Icon = iconMap[blueprint.icon] || Layers;
   const taskCount = blueprint.task_entries.length;
@@ -43,9 +44,20 @@ export function BlueprintCard({ blueprint }: BlueprintCardProps) {
       <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark line-clamp-2 mb-3">
         {blueprint.description}
       </p>
-      <div className="flex items-center gap-1.5 text-xs text-text-secondary-light dark:text-text-secondary-dark">
-        <ListChecks size={12} />
-        <span>{taskCount} {taskCount === 1 ? "task" : "tasks"}</span>
+      <div className="flex items-center gap-3 text-xs text-text-secondary-light dark:text-text-secondary-dark">
+        <span className="flex items-center gap-1.5">
+          v{blueprint.version}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <ListChecks size={12} />
+          {taskCount} {taskCount === 1 ? "task" : "tasks"}
+        </span>
+        {assignedNodeCount > 0 && (
+          <span className="flex items-center gap-1.5">
+            <Users size={12} />
+            {assignedNodeCount} {assignedNodeCount === 1 ? "node" : "nodes"}
+          </span>
+        )}
       </div>
     </motion.div>
   );

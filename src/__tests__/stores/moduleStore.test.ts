@@ -14,6 +14,7 @@ const mockTask: TaskInfo = {
   depends_on: [],
   config_schema: [],
   status: "not_started",
+  supports_uninstall: false,
 };
 
 describe("taskStore", () => {

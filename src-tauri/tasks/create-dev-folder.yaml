@@ -5,6 +5,7 @@ icon: FolderOpen
 category: Folders
 privilege: user
 target: any
+variables: [dev_folder]
 
 config:
   - key: path

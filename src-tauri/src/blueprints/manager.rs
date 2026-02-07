@@ -217,10 +217,22 @@ impl BlueprintManager {
             description,
             icon,
             is_builtin: false,
+            version: "1.0.0".to_string(),
+            extends: None,
             task_entries,
             created_at: now,
             updated_at: now,
         };
+        self.add_blueprint(blueprint.clone())?;
+        Ok(blueprint)
+    }
+
+    /// Import a blueprint from a `BlueprintDefinition` (e.g. from a `.qmbp` package).
+    /// Assigns a new unique ID, marks it as non-builtin, saves it, and returns the new Blueprint.
+    pub fn import_from_definition(&mut self, def: BlueprintDefinition) -> Result<Blueprint, AppError> {
+        let mut blueprint = Blueprint::from_definition(def);
+        blueprint.id = Uuid::new_v4().to_string();
+        blueprint.is_builtin = false;
         self.add_blueprint(blueprint.clone())?;
         Ok(blueprint)
     }
@@ -238,12 +250,46 @@ impl BlueprintManager {
             description: source.description,
             icon: source.icon,
             is_builtin: false,
+            version: "1.0.0".to_string(),
+            extends: source.extends,
             task_entries: source.task_entries,
             created_at: now,
             updated_at: now,
         };
         self.add_blueprint(cloned.clone())?;
         Ok(cloned)
+    }
+
+    /// Resolves a blueprint's full task list by merging parent entries.
+    /// Child entries override parent entries with the same task_id.
+    /// Returns the merged entries sorted by order.
+    pub fn resolve_task_entries(&self, blueprint_id: &str) -> Result<Vec<BlueprintTaskEntry>, AppError> {
+        let bp = self.get_blueprint(blueprint_id)
+            .ok_or_else(|| AppError::Blueprint(format!("Blueprint not found: {}", blueprint_id)))?;
+
+        let mut entries = Vec::new();
+
+        // If this blueprint extends a parent, get parent entries first
+        if let Some(ref parent_id) = bp.extends {
+            // Prevent circular inheritance (only 1 level deep for now)
+            let parent = self.get_blueprint(parent_id)
+                .ok_or_else(|| AppError::Blueprint(format!("Parent blueprint not found: {}", parent_id)))?;
+            entries.extend(parent.task_entries.clone());
+        }
+
+        // Merge child entries: override matching task_ids, append new ones
+        for child_entry in &bp.task_entries {
+            if let Some(existing) = entries.iter_mut().find(|e| e.task_id == child_entry.task_id) {
+                *existing = child_entry.clone();
+            } else {
+                entries.push(child_entry.clone());
+            }
+        }
+
+        // Re-sort by order
+        entries.sort_by_key(|e| e.order);
+
+        Ok(entries)
     }
 }
 
@@ -268,6 +314,8 @@ impl Blueprint {
             description: def.description,
             icon: def.icon,
             is_builtin: def.builtin,
+            version: def.version,
+            extends: def.extends,
             task_entries: def
                 .tasks
                 .into_iter()
@@ -296,6 +344,8 @@ impl Blueprint {
             description: self.description.clone(),
             icon: self.icon.clone(),
             builtin: self.is_builtin,
+            version: self.version.clone(),
+            extends: self.extends.clone(),
             tasks: self
                 .task_entries
                 .iter()
@@ -341,6 +391,8 @@ mod tests {
             description: format!("Test blueprint: {}", name),
             icon: "TestIcon".to_string(),
             is_builtin,
+            version: "1.0.0".to_string(),
+            extends: None,
             task_entries: vec![BlueprintTaskEntry {
                 task_id: "test-task".to_string(),
                 enabled: true,
@@ -555,7 +607,133 @@ mod tests {
         let bp2 = Blueprint::from_definition(def);
         assert_eq!(bp.id, bp2.id);
         assert_eq!(bp.name, bp2.name);
+        assert_eq!(bp.version, bp2.version);
         assert_eq!(bp.task_entries.len(), bp2.task_entries.len());
         assert_eq!(bp.task_entries[0].task_id, bp2.task_entries[0].task_id);
+    }
+
+    #[test]
+    fn new_blueprint_starts_at_version_1_0_0() {
+        let dir = tempdir().unwrap();
+        let mut mgr = test_manager(dir.path());
+
+        let bp = mgr
+            .create_blueprint(
+                "Versioned".to_string(),
+                "Test version".to_string(),
+                "Star".to_string(),
+                vec![],
+            )
+            .unwrap();
+
+        assert_eq!(bp.version, "1.0.0");
+    }
+
+    #[test]
+    fn cloned_blueprint_starts_at_version_1_0_0() {
+        let dir = tempdir().unwrap();
+        let mut mgr = test_manager(dir.path());
+
+        let mut bp = make_blueprint("source", false);
+        bp.version = "3.2.1".to_string();
+        let original_id = bp.id.clone();
+        mgr.add_blueprint(bp).unwrap();
+
+        let cloned = mgr.clone_blueprint(&original_id, "Clone".to_string()).unwrap();
+        assert_eq!(cloned.version, "1.0.0");
+    }
+
+    #[test]
+    fn roundtrip_preserves_version() {
+        let mut bp = make_blueprint("versioned-roundtrip", false);
+        bp.version = "2.5.3".to_string();
+        let def = bp.to_definition();
+        assert_eq!(def.version, "2.5.3");
+        let bp2 = Blueprint::from_definition(def);
+        assert_eq!(bp2.version, "2.5.3");
+    }
+
+    #[test]
+    fn resolve_entries_without_parent() {
+        let dir = tempdir().unwrap();
+        let mut mgr = test_manager(dir.path());
+        let bp = make_blueprint("standalone", false);
+        let id = bp.id.clone();
+        mgr.add_blueprint(bp).unwrap();
+
+        let resolved = mgr.resolve_task_entries(&id).unwrap();
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].task_id, "test-task");
+    }
+
+    #[test]
+    fn resolve_entries_with_parent() {
+        let dir = tempdir().unwrap();
+        let mut mgr = test_manager(dir.path());
+
+        // Create parent
+        let parent = make_blueprint("parent", false);
+        let parent_id = parent.id.clone();
+        mgr.add_blueprint(parent).unwrap();
+
+        // Create child that extends parent and adds a task
+        let now = Utc::now();
+        let child = Blueprint {
+            id: Uuid::new_v4().to_string(),
+            name: "child".to_string(),
+            description: "Child blueprint".to_string(),
+            icon: "Star".to_string(),
+            is_builtin: false,
+            version: "1.0.0".to_string(),
+            extends: Some(parent_id.clone()),
+            task_entries: vec![BlueprintTaskEntry {
+                task_id: "extra-task".to_string(),
+                enabled: true,
+                config_overrides: HashMap::new(),
+                order: 1,
+            }],
+            created_at: now,
+            updated_at: now,
+        };
+        let child_id = child.id.clone();
+        mgr.add_blueprint(child).unwrap();
+
+        let resolved = mgr.resolve_task_entries(&child_id).unwrap();
+        assert_eq!(resolved.len(), 2); // parent's test-task + child's extra-task
+    }
+
+    #[test]
+    fn resolve_entries_child_overrides_parent() {
+        let dir = tempdir().unwrap();
+        let mut mgr = test_manager(dir.path());
+
+        let parent = make_blueprint("parent", false);
+        let parent_id = parent.id.clone();
+        mgr.add_blueprint(parent).unwrap();
+
+        let now = Utc::now();
+        let child = Blueprint {
+            id: Uuid::new_v4().to_string(),
+            name: "child".to_string(),
+            description: "Overrides parent".to_string(),
+            icon: "Star".to_string(),
+            is_builtin: false,
+            version: "1.0.0".to_string(),
+            extends: Some(parent_id.clone()),
+            task_entries: vec![BlueprintTaskEntry {
+                task_id: "test-task".to_string(), // Same as parent
+                enabled: false,                   // But disabled
+                config_overrides: HashMap::new(),
+                order: 0,
+            }],
+            created_at: now,
+            updated_at: now,
+        };
+        let child_id = child.id.clone();
+        mgr.add_blueprint(child).unwrap();
+
+        let resolved = mgr.resolve_task_entries(&child_id).unwrap();
+        assert_eq!(resolved.len(), 1);
+        assert!(!resolved[0].enabled); // Child's override wins
     }
 }

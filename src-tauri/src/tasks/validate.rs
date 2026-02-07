@@ -15,6 +15,9 @@ impl fmt::Display for ValidationError {
     }
 }
 
+/// Built-in template variables that are always available.
+const BUILTIN_VARS: &[&str] = &["home", "version", "install_path"];
+
 /// Validate a TaskDefinition, returning a list of errors (empty = valid).
 pub fn validate_task(def: &TaskDefinition) -> Vec<ValidationError> {
     let mut errors = Vec::new();
@@ -125,6 +128,9 @@ pub fn validate_task(def: &TaskDefinition) -> Vec<ValidationError> {
         }
     }
 
+    // Collect allowed template variable names: config keys + variables + builtins
+    let variable_names: HashSet<&str> = def.variables.iter().map(|v| v.as_str()).collect();
+
     // Validate steps
     if def.steps.is_empty() {
         errors.push(ValidationError {
@@ -154,11 +160,57 @@ pub fn validate_task(def: &TaskDefinition) -> Vec<ValidationError> {
         }
 
         // Validate template variables in run
-        validate_template_vars(&step.run, &config_keys, &format!("{}.run", prefix), &mut errors);
+        validate_template_vars(&step.run, &config_keys, &variable_names, &format!("{}.run", prefix), &mut errors);
     }
 
     // Validate template variables in detect
-    validate_template_vars(&def.detect, &config_keys, "detect", &mut errors);
+    validate_template_vars(&def.detect, &config_keys, &variable_names, "detect", &mut errors);
+
+    // Validate v2 fields
+    if let Some(ref download) = def.download {
+        if download.url.is_empty() {
+            errors.push(ValidationError {
+                field: "download.url".into(),
+                message: "must not be empty".into(),
+            });
+        }
+        match download.extract.as_str() {
+            "tar.gz" | "tgz" | "tar.xz" | "txz" | "tar.bz2" | "tbz2" | "zip" | "none" => {}
+            other => {
+                errors.push(ValidationError {
+                    field: "download.extract".into(),
+                    message: format!(
+                        "must be tar.gz, tar.xz, tar.bz2, zip, or none; got \"{}\"",
+                        other
+                    ),
+                });
+            }
+        }
+    }
+
+    if let Some(ref desktop) = def.desktop {
+        if desktop.name.is_empty() {
+            errors.push(ValidationError {
+                field: "desktop.name".into(),
+                message: "must not be empty".into(),
+            });
+        }
+        if desktop.exec.is_empty() {
+            errors.push(ValidationError {
+                field: "desktop.exec".into(),
+                message: "must not be empty".into(),
+            });
+        }
+    }
+
+    if let Some(ref apparmor) = def.apparmor {
+        if apparmor.profile.is_empty() {
+            errors.push(ValidationError {
+                field: "apparmor.profile".into(),
+                message: "must not be empty".into(),
+            });
+        }
+    }
 
     errors
 }
@@ -166,6 +218,7 @@ pub fn validate_task(def: &TaskDefinition) -> Vec<ValidationError> {
 fn validate_template_vars(
     script: &str,
     config_keys: &HashSet<&str>,
+    variable_names: &HashSet<&str>,
     field: &str,
     errors: &mut Vec<ValidationError>,
 ) {
@@ -174,11 +227,14 @@ fn validate_template_vars(
         let abs_pos = start + pos;
         if let Some(end) = script[abs_pos + 2..].find("}}") {
             let var_name = script[abs_pos + 2..abs_pos + 2 + end].trim();
-            if var_name != "home" && !config_keys.contains(var_name) {
+            let is_known = BUILTIN_VARS.contains(&var_name)
+                || config_keys.contains(var_name)
+                || variable_names.contains(var_name);
+            if !is_known {
                 errors.push(ValidationError {
                     field: field.to_string(),
                     message: format!(
-                        "template variable \"{{{{{}}}}}\" does not reference a config key or \"home\"",
+                        "template variable \"{{{{{}}}}}\" does not reference a config key, variable, or built-in",
                         var_name
                     ),
                 });
@@ -213,6 +269,13 @@ mod tests {
                 progress: 100,
                 run: "echo hello".into(),
             }],
+            version: None,
+            variables: vec![],
+            download: None,
+            desktop: None,
+            apparmor: None,
+            uninstall: vec![],
+            version_detect: None,
         }
     }
 

@@ -1,7 +1,11 @@
-pub mod tasks;
+pub mod activity;
 pub mod apparmor;
 pub mod blueprints;
 pub mod config;
 pub mod fleet;
 pub mod ssh;
 pub mod system;
+pub mod tasks;
+pub mod variables;
+pub mod vault;
+pub mod yubikey;

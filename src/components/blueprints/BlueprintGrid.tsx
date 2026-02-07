@@ -10,9 +10,10 @@ interface BlueprintGridProps {
   blueprints: Blueprint[];
   loading: boolean;
   onCreateBlueprint: () => void;
+  nodeCountByBlueprint?: Record<string, number>;
 }
 
-export function BlueprintGrid({ blueprints, loading, onCreateBlueprint }: BlueprintGridProps) {
+export function BlueprintGrid({ blueprints, loading, onCreateBlueprint, nodeCountByBlueprint = {} }: BlueprintGridProps) {
   if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -49,7 +50,7 @@ export function BlueprintGrid({ blueprints, loading, onCreateBlueprint }: Bluepr
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.25, delay: idx * 0.04 }}
           >
-            <BlueprintCard blueprint={blueprint} />
+            <BlueprintCard blueprint={blueprint} assignedNodeCount={nodeCountByBlueprint[blueprint.id] || 0} />
           </motion.div>
         ))}
       </AnimatePresence>

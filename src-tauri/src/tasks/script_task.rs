@@ -4,7 +4,8 @@ use serde_json::Value;
 
 use super::yaml_schema::TaskDefinition;
 use super::{
-    ConfigField, ExecutionTarget, PrivilegeLevel, ProgressCallback, SetupTask, TaskStatus,
+    AppArmorInfo, ConfigField, DesktopInfo, DownloadInfo, ExecutionTarget, PrivilegeLevel,
+    ProgressCallback, SetupTask, TaskStatus,
 };
 use crate::error::AppError;
 use crate::executor::CommandExecutor;
@@ -27,6 +28,11 @@ impl ScriptTask {
     ) -> HashMap<String, String> {
         let mut ctx = HashMap::new();
         ctx.insert("home".to_string(), home.to_string());
+
+        // Inject version if defined
+        if let Some(ref version) = self.definition.version {
+            ctx.insert("version".to_string(), version.clone());
+        }
 
         for field in &self.definition.config {
             let value = config
@@ -104,6 +110,37 @@ impl SetupTask for ScriptTask {
         self.definition.depends_on.clone()
     }
 
+    fn version(&self) -> Option<String> {
+        self.definition.version.clone()
+    }
+
+    fn variables(&self) -> Vec<String> {
+        self.definition.variables.clone()
+    }
+
+    fn download_info(&self) -> Option<DownloadInfo> {
+        self.definition.download.as_ref().map(|d| DownloadInfo {
+            url: d.url.clone(),
+            extract: d.extract.clone(),
+            checksum_sha256: d.checksum_sha256.clone(),
+        })
+    }
+
+    fn desktop_info(&self) -> Option<DesktopInfo> {
+        self.definition.desktop.as_ref().map(|d| DesktopInfo {
+            name: d.name.clone(),
+            exec: d.exec.clone(),
+            categories: d.categories.clone(),
+        })
+    }
+
+    fn apparmor_info(&self) -> Option<AppArmorInfo> {
+        self.definition.apparmor.as_ref().map(|a| AppArmorInfo {
+            profile: a.profile.clone(),
+            abstractions: a.abstractions.clone(),
+        })
+    }
+
     fn config_schema(&self) -> Vec<ConfigField> {
         self.definition
             .config
@@ -117,6 +154,24 @@ impl SetupTask for ScriptTask {
                 required: f.required.unwrap_or(false),
             })
             .collect()
+    }
+
+    async fn detect_installed_version(
+        &self,
+        config: &HashMap<String, Value>,
+        exec: &dyn CommandExecutor,
+    ) -> Option<String> {
+        let detect_cmd = self.definition.version_detect.as_ref()?;
+        let ctx = self.build_context(config, &exec.home_dir());
+        let script = Self::expand_template(detect_cmd, &ctx);
+
+        match exec.run_command("sh", &["-c", &script]).await {
+            Ok(output) if output.status == 0 => {
+                let version = output.stdout.trim().to_string();
+                if version.is_empty() { None } else { Some(version) }
+            }
+            _ => None,
+        }
     }
 
     async fn detect_state(
@@ -163,6 +218,48 @@ impl SetupTask for ScriptTask {
         on_progress(1.0, "Completed".to_string());
         Ok(())
     }
+
+    fn supports_uninstall(&self) -> bool {
+        !self.definition.uninstall.is_empty()
+    }
+
+    async fn uninstall(
+        &self,
+        config: &HashMap<String, Value>,
+        exec: &dyn CommandExecutor,
+        on_progress: &ProgressCallback,
+    ) -> Result<(), AppError> {
+        if self.definition.uninstall.is_empty() {
+            return Err(AppError::Task(format!(
+                "Uninstall not supported for task '{}'",
+                self.name()
+            )));
+        }
+
+        let ctx = self.build_context(config, &exec.home_dir());
+        let total_steps = self.definition.uninstall.len();
+
+        for (i, step) in self.definition.uninstall.iter().enumerate() {
+            let progress = step.progress as f32 / 100.0;
+            on_progress(progress, step.name.clone());
+
+            let script = Self::expand_template(&step.run, &ctx);
+            let result = exec.run_command("sh", &["-c", &script]).await?;
+
+            if result.status != 0 {
+                return Err(AppError::Task(format!(
+                    "Uninstall step {} of {} failed (\"{}\"): {}",
+                    i + 1,
+                    total_steps,
+                    step.name,
+                    result.stderr.trim()
+                )));
+            }
+        }
+
+        on_progress(1.0, "Uninstall completed".to_string());
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -195,6 +292,13 @@ mod tests {
                 progress: 100,
                 run: "mkdir -p {{path}}".into(),
             }],
+            version: None,
+            variables: vec![],
+            download: None,
+            desktop: None,
+            apparmor: None,
+            uninstall: vec![],
+            version_detect: None,
         }
     }
 

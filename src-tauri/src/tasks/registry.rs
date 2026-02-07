@@ -28,6 +28,10 @@ impl TaskRegistry {
         self.tasks.iter().find(|t| t.id() == id).map(|t| t.as_ref())
     }
 
+    pub fn all(&self) -> Vec<&dyn SetupTask> {
+        self.tasks.iter().map(|t| t.as_ref()).collect()
+    }
+
     /// Given a set of task IDs, expand to include all transitive dependencies
     /// and return them in topological order (dependencies first).
     pub fn resolve_dependencies(&self, task_ids: &[String]) -> Vec<String> {

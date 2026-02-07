@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -19,6 +21,37 @@ pub struct TaskDefinition {
     pub config: Vec<ConfigFieldDef>,
     pub detect: String,
     pub steps: Vec<StepDef>,
+
+    /// Optional uninstall steps (reverse of install).
+    #[serde(default)]
+    pub uninstall: Vec<StepDef>,
+
+    // ── Schema v2 fields (all optional for backwards compatibility) ──
+
+    /// Semantic version of the software this task installs.
+    #[serde(default)]
+    pub version: Option<String>,
+
+    /// References to shared blueprint variables this task consumes.
+    #[serde(default)]
+    pub variables: Vec<String>,
+
+    /// Download specification for fetching an archive or binary.
+    #[serde(default)]
+    pub download: Option<DownloadDef>,
+
+    /// Desktop entry (.desktop file) generation spec.
+    #[serde(default)]
+    pub desktop: Option<DesktopDef>,
+
+    /// AppArmor profile to install alongside this task.
+    #[serde(default)]
+    pub apparmor: Option<AppArmorDef>,
+
+    /// Optional shell command to detect the installed version.
+    /// The command should output just the version string (e.g., "3.24.0").
+    #[serde(default)]
+    pub version_detect: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -40,6 +73,63 @@ pub struct StepDef {
     pub name: String,
     pub progress: u8,
     pub run: String,
+}
+
+/// Download specification for archives or binaries.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct DownloadDef {
+    /// URL template (may contain {{variable}} placeholders).
+    pub url: String,
+    /// Optional URL for a checksum file (SHA-256).
+    #[serde(default)]
+    pub checksum_url: Option<String>,
+    /// Optional inline SHA-256 checksum.
+    #[serde(default)]
+    pub checksum_sha256: Option<String>,
+    /// Archive extraction format: tar.gz, zip, or none (raw binary).
+    #[serde(default = "default_extract")]
+    pub extract: String,
+    /// Target directory for extraction (template-expanded).
+    #[serde(default)]
+    pub dest: Option<String>,
+}
+
+fn default_extract() -> String {
+    "none".to_string()
+}
+
+/// Desktop entry generation specification (.desktop file).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct DesktopDef {
+    /// Display name in application launchers.
+    pub name: String,
+    /// Relative path to the icon file within the install directory.
+    #[serde(default)]
+    pub icon_source: Option<String>,
+    /// Relative path to the executable within the install directory.
+    pub exec: String,
+    /// Freedesktop.org categories.
+    #[serde(default)]
+    pub categories: Vec<String>,
+    /// MIME types this application can handle.
+    #[serde(default)]
+    pub mime_types: Vec<String>,
+    /// Whether the application runs in a terminal.
+    #[serde(default)]
+    pub terminal: bool,
+}
+
+/// AppArmor profile reference bundled with a task.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AppArmorDef {
+    /// Profile name (references apparmor/profiles/<name> in the blueprint).
+    pub profile: String,
+    /// Abstractions this profile depends on (installed alongside).
+    #[serde(default)]
+    pub abstractions: Vec<String>,
+    /// Custom tunables to set (key=value pairs for /etc/apparmor.d/tunables/quartermaster).
+    #[serde(default)]
+    pub tunables: HashMap<String, String>,
 }
 
 fn default_privilege() -> String {
@@ -76,6 +166,11 @@ steps:
         assert!(def.depends_on.is_empty());
         assert!(def.config.is_empty());
         assert_eq!(def.steps.len(), 1);
+        assert!(def.version.is_none());
+        assert!(def.download.is_none());
+        assert!(def.desktop.is_none());
+        assert!(def.apparmor.is_none());
+        assert!(def.variables.is_empty());
     }
 
     #[test]
@@ -122,5 +217,56 @@ steps:
         assert_eq!(def.config[0].field_type, "select");
         assert_eq!(def.config[0].options.as_ref().unwrap().len(), 3);
         assert_eq!(def.steps.len(), 2);
+    }
+
+    #[test]
+    fn parse_v2_task_with_download() {
+        let yaml = r#"
+id: intellij-idea
+name: IntelliJ IDEA
+description: Download and install IntelliJ IDEA
+icon: Code
+category: Applications
+version: "2025.2"
+variables: [dev_folder]
+download:
+  url: "https://download.jetbrains.com/idea/ideaIC-{{version}}.tar.gz"
+  checksum_sha256: "abc123"
+  extract: tar.gz
+  dest: "{{install_path}}"
+desktop:
+  name: IntelliJ IDEA
+  icon_source: bin/idea.svg
+  exec: bin/idea
+  categories: [Development, IDE]
+apparmor:
+  profile: intellij
+  abstractions: [shell-environment, git-client]
+  tunables:
+    QM_PROJECTS: "{{dev_folder}}/Projects"
+detect: "test -d /tmp/idea"
+steps:
+  - name: Extract
+    progress: 100
+    run: "echo done"
+"#;
+        let def: TaskDefinition = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(def.version.as_deref(), Some("2025.2"));
+        assert_eq!(def.variables, vec!["dev_folder"]);
+
+        let dl = def.download.unwrap();
+        assert!(dl.url.contains("ideaIC"));
+        assert_eq!(dl.extract, "tar.gz");
+        assert_eq!(dl.checksum_sha256.as_deref(), Some("abc123"));
+
+        let desktop = def.desktop.unwrap();
+        assert_eq!(desktop.name, "IntelliJ IDEA");
+        assert_eq!(desktop.exec, "bin/idea");
+        assert_eq!(desktop.categories, vec!["Development", "IDE"]);
+
+        let aa = def.apparmor.unwrap();
+        assert_eq!(aa.profile, "intellij");
+        assert_eq!(aa.abstractions, vec!["shell-environment", "git-client"]);
+        assert_eq!(aa.tunables.get("QM_PROJECTS").unwrap(), "{{dev_folder}}/Projects");
     }
 }

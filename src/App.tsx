@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell";
 import { CommandPalette } from "./components/layout/CommandPalette";
+import { DashboardPage } from "./pages/DashboardPage";
 import { FleetPage } from "./pages/FleetPage";
 import { NodeDetailPage } from "./pages/NodeDetailPage";
 import { TaskLibraryPage } from "./pages/TaskLibraryPage";
@@ -27,11 +28,11 @@ function AnimatedRoutes() {
       >
         <ErrorBoundary key={location.pathname}>
           <Routes location={location}>
-            <Route path="/" element={<Navigate to="/fleet" replace />} />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/fleet" element={<FleetPage />} />
             <Route path="/fleet/:nodeId" element={<NodeDetailPage />} />
             <Route path="/tasks" element={<TaskLibraryPage />} />
-            <Route path="/dashboard" element={<Navigate to="/tasks" replace />} />
             <Route path="/blueprints" element={<BlueprintsPage />} />
             <Route path="/blueprints/:blueprintId" element={<BlueprintDetailPage />} />
             <Route path="/apparmor" element={<AppArmorPage />} />

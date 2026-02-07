@@ -3,6 +3,7 @@ import { useAppArmorStore } from "../stores/appArmorStore";
 import { useToastStore } from "../stores/toastStore";
 import { useTauriEvent } from "./useTauriEvent";
 import * as api from "../services/tauriCommands";
+import { formatError } from "../lib/formatError";
 import type { AppArmorDenialEvent } from "../types/events";
 
 export function useAppArmor() {
@@ -24,7 +25,7 @@ export function useAppArmor() {
       store.setSuggestions(logs.suggestions);
       store.setProfiles(profiles);
     } catch (err) {
-      addToast({ type: "error", title: "Failed to load AppArmor data", message: String(err) });
+      addToast({ type: "error", title: "Failed to load AppArmor data", message: formatError(err) });
     } finally {
       store.setLoading(false);
     }
@@ -35,7 +36,7 @@ export function useAppArmor() {
       await api.startLogMonitor();
       store.setMonitoring(true);
     } catch (err) {
-      addToast({ type: "error", title: "Failed to start monitor", message: String(err) });
+      addToast({ type: "error", title: "Failed to start monitor", message: formatError(err) });
     }
   };
 
@@ -44,7 +45,7 @@ export function useAppArmor() {
       await api.stopLogMonitor();
       store.setMonitoring(false);
     } catch (err) {
-      addToast({ type: "error", title: "Failed to stop monitor", message: String(err) });
+      addToast({ type: "error", title: "Failed to stop monitor", message: formatError(err) });
     }
   };
 
@@ -55,7 +56,7 @@ export function useAppArmor() {
       const consolidated = await api.consolidateRules(selected);
       store.setReviewRules(consolidated, "append");
     } catch (err) {
-      addToast({ type: "error", title: "Failed to consolidate rules", message: String(err) });
+      addToast({ type: "error", title: "Failed to consolidate rules", message: formatError(err) });
     }
   };
 
@@ -68,7 +69,7 @@ export function useAppArmor() {
         addToast({ type: "info", title: "No consolidation needed", message: `${profileName} rules are already optimal` });
       }
     } catch (err) {
-      addToast({ type: "error", title: "Failed to consolidate profile", message: String(err) });
+      addToast({ type: "error", title: "Failed to consolidate profile", message: formatError(err) });
     }
   };
 
@@ -81,7 +82,7 @@ export function useAppArmor() {
           await api.rewriteProfileRules(profile, rules);
           addToast({ type: "success", title: "Profile consolidated", message: `Rewrote rules for: ${profile}` });
         } catch (err) {
-          addToast({ type: "error", title: "Failed to rewrite profile", message: String(err) });
+          addToast({ type: "error", title: "Failed to rewrite profile", message: formatError(err) });
         }
       }
     } else {
@@ -95,7 +96,7 @@ export function useAppArmor() {
         const profileNames = requests.map((r) => r.profile).join(", ");
         addToast({ type: "success", title: "Rules applied", message: `Updated profiles: ${profileNames}` });
       } catch (err) {
-        addToast({ type: "error", title: "Failed to apply rules", message: String(err) });
+        addToast({ type: "error", title: "Failed to apply rules", message: formatError(err) });
       }
     }
     store.setReviewRules(null);

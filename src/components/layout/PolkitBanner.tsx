@@ -3,6 +3,7 @@ import { Shield, X } from "lucide-react";
 import { Button } from "../ui/Button";
 import * as api from "../../services/tauriCommands";
 import { useToastStore } from "../../stores/toastStore";
+import { formatError } from "../../lib/formatError";
 import { motion, AnimatePresence } from "motion/react";
 
 export function PolkitBanner() {
@@ -23,7 +24,7 @@ export function PolkitBanner() {
       addToast({ type: "success", title: "Policy installed", message: "Polkit policy has been installed." });
       setVisible(false);
     } catch (err) {
-      addToast({ type: "error", title: "Installation failed", message: String(err) });
+      addToast({ type: "error", title: "Installation failed", message: formatError(err) });
     } finally {
       setInstalling(false);
     }

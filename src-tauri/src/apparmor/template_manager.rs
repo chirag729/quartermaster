@@ -487,8 +487,8 @@ mod tests {
 
         assert_eq!(ctx.get("home").unwrap(), "/home/user");
         assert_eq!(ctx.get("mode").unwrap(), "complain");
-        // flutter-sdk task has sdk_base_path default "~/SDK"
-        assert_eq!(ctx.get("sdk_base_path").unwrap(), "/home/user/SDK");
+        // flutter-sdk task has sdk_base_path default "~/.local/share/sdk"
+        assert_eq!(ctx.get("sdk_base_path").unwrap(), "/home/user/.local/share/sdk");
         // profile variable default
         assert_eq!(
             ctx.get("projects_path").unwrap(),
@@ -569,8 +569,8 @@ mod tests {
         let ctx =
             ProfileTemplateManager::build_context(&template, &registry, &task_config, &profile_config, "/home/user");
 
-        // sdk_base_path (task config, path type, default "~/SDK") should be expanded
-        assert_eq!(ctx.get("sdk_base_path").unwrap(), "/home/user/SDK");
+        // sdk_base_path (task config, path type, default "~/.local/share/sdk") should be expanded
+        assert_eq!(ctx.get("sdk_base_path").unwrap(), "/home/user/.local/share/sdk");
         // projects_path (profile variable, path type, default "~/Development/Projects") should be expanded
         assert_eq!(
             ctx.get("projects_path").unwrap(),

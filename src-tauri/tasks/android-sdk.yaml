@@ -7,12 +7,13 @@ tags: [mobile, android]
 privilege: user
 target: any
 depends_on: [create-sdk-folder]
+variables: [sdk_folder]
 
 config:
   - key: sdk_base_path
     label: SDK base path
     type: path
-    default: "~/SDK"
+    default: "~/.local/share/sdk"
     required: false
 
 detect: |

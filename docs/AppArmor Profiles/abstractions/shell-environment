@@ -1,0 +1,20 @@
+# vim:syntax=apparmor
+
+# Shell environment: bash init files, nvm, cargo, user-local binaries
+
+  # ── Bash init files ──────────────────────────────────────────────
+  owner @{HOME}/.bashrc r,
+  owner @{HOME}/.bash_aliases r,
+  owner @{HOME}/.bash_history rw,
+  owner @{HOME}/.inputrc r,
+  owner @{HOME}/.profile r,
+
+  # ── nvm + Node.js ───────────────────────────────────────────────
+  owner @{HOME}/.nvm/** rixm,
+
+  # ── Cargo / Rust ───────────────────────────────────────────────
+  owner @{HOME}/.cargo/env r,
+  owner @{HOME}/.cargo/bin/* rixm,
+
+  # ── User-local binaries ────────────────────────────────────────
+  owner @{HOME}/.local/bin/* rix,

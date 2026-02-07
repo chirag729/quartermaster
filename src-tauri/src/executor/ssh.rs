@@ -1,35 +1,135 @@
 use async_trait::async_trait;
 
 use crate::error::AppError;
+use crate::fleet::{SshAuthMethod, SshConfig};
 use super::{CommandExecutor, CommandOutput};
+
+/// How the SSH connection should authenticate.
+#[derive(Debug, Clone)]
+enum AuthMode {
+    /// Rely on the SSH agent or default keys (`BatchMode=yes`).
+    AgentOrDefault,
+    /// Explicit private key file (`-i <path>`, `BatchMode=yes`).
+    KeyFile(String),
+    /// Certificate-based (`-i <cert> -i <key>`, `BatchMode=yes`).
+    Certificate { cert_path: String, key_path: String },
+    /// Password via `sshpass -e` (password set in `SSHPASS` env).
+    Password(String),
+}
 
 pub struct SshExecutor {
     host: String,
     port: u16,
     username: String,
     home_dir: String,
+    auth_mode: AuthMode,
+    proxy_jump: Option<String>,
 }
 
 impl SshExecutor {
+    /// Basic constructor — agent/default key auth, no proxy jump.
     pub fn new(host: String, port: u16, username: String) -> Self {
         let home_dir = if username == "root" {
             "/root".to_string()
         } else {
             format!("/home/{}", username)
         };
-        Self { host, port, username, home_dir }
+        Self {
+            host,
+            port,
+            username,
+            home_dir,
+            auth_mode: AuthMode::AgentOrDefault,
+            proxy_jump: None,
+        }
     }
 
-    /// Build the base ssh command with standard options.
+    /// Construct from the fleet `SshConfig` model.
+    ///
+    /// For `Password` auth, `vault_password` must be provided (retrieved from
+    /// the vault by the caller). For all other methods the vault is not needed.
+    pub fn from_ssh_config(config: &SshConfig, vault_password: Option<&str>) -> Self {
+        let home_dir = if config.username == "root" {
+            "/root".to_string()
+        } else {
+            format!("/home/{}", config.username)
+        };
+
+        let auth_mode = match &config.auth_method {
+            SshAuthMethod::Password { .. } => {
+                let pw = vault_password.unwrap_or("").to_string();
+                AuthMode::Password(pw)
+            }
+            SshAuthMethod::KeyFile { private_key_path } => {
+                AuthMode::KeyFile(private_key_path.clone())
+            }
+            SshAuthMethod::Certificate {
+                certificate_path,
+                private_key_path,
+            } => AuthMode::Certificate {
+                cert_path: certificate_path.clone(),
+                key_path: private_key_path.clone(),
+            },
+            SshAuthMethod::Fido2Resident { .. } | SshAuthMethod::Agent => {
+                AuthMode::AgentOrDefault
+            }
+        };
+
+        Self {
+            host: config.host.clone(),
+            port: config.port,
+            username: config.username.clone(),
+            home_dir,
+            auth_mode,
+            proxy_jump: config.proxy_jump.clone(),
+        }
+    }
+
+    /// Build the base ssh command with standard options and auth-specific flags.
     fn ssh_command(&self) -> tokio::process::Command {
-        let mut cmd = tokio::process::Command::new("ssh");
+        let use_sshpass = matches!(self.auth_mode, AuthMode::Password(_));
+
+        let mut cmd = if use_sshpass {
+            let mut c = tokio::process::Command::new("sshpass");
+            c.arg("-e"); // read password from SSHPASS env
+            c.arg("ssh");
+            c
+        } else {
+            tokio::process::Command::new("ssh")
+        };
+
+        cmd.args(["-p", &self.port.to_string()]);
+
+        // Auth-specific flags
+        match &self.auth_mode {
+            AuthMode::AgentOrDefault => {
+                cmd.args(["-o", "BatchMode=yes"]);
+            }
+            AuthMode::KeyFile(path) => {
+                cmd.args(["-o", "BatchMode=yes"]);
+                cmd.args(["-i", path]);
+            }
+            AuthMode::Certificate { cert_path, key_path } => {
+                cmd.args(["-o", "BatchMode=yes"]);
+                cmd.args(["-i", cert_path]);
+                cmd.args(["-i", key_path]);
+            }
+            AuthMode::Password(pw) => {
+                cmd.env("SSHPASS", pw);
+            }
+        }
+
+        // ProxyJump
+        if let Some(ref jump) = self.proxy_jump {
+            cmd.args(["-J", jump]);
+        }
+
         cmd.args([
-            "-p", &self.port.to_string(),
-            "-o", "BatchMode=yes",
             "-o", "ConnectTimeout=10",
             "-o", "StrictHostKeyChecking=accept-new",
             &format!("{}@{}", self.username, self.host),
         ]);
+
         cmd
     }
 }

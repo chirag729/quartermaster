@@ -136,9 +136,22 @@ impl FleetManager {
         self.nodes.iter().find(|n| n.id == id)
     }
 
+    /// Returns a mutable reference to a node by ID.
+    pub fn get_node_mut(&mut self, id: &str) -> Option<&mut Node> {
+        self.nodes.iter_mut().find(|n| n.id == id)
+    }
+
     /// Returns a slice of all nodes.
     pub fn list_nodes(&self) -> &[Node] {
         &self.nodes
+    }
+
+    /// Persists all nodes to disk.
+    pub fn save(&self) -> Result<(), AppError> {
+        for node in &self.nodes {
+            self.save_node(node)?;
+        }
+        Ok(())
     }
 
     /// Auto-detects the local machine as a node.
@@ -164,6 +177,7 @@ impl FleetManager {
             status: NodeStatus::Online,
             last_seen: Some(Utc::now()),
             blueprint_id: None,
+            applied_blueprint_version: None,
             created_at: Utc::now(),
         }
     }
@@ -193,6 +207,7 @@ mod tests {
             status: NodeStatus::Unknown,
             last_seen: None,
             blueprint_id: None,
+            applied_blueprint_version: None,
             created_at: Utc::now(),
         }
     }

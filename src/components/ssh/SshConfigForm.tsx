@@ -12,7 +12,8 @@ const authMethodOptions = [
   { value: "agent", label: "SSH Agent" },
   { value: "key_file", label: "Key File" },
   { value: "certificate", label: "Certificate" },
-  { value: "fido2", label: "FIDO2" },
+  { value: "password", label: "Password" },
+  { value: "fido2_resident", label: "FIDO2 Resident Key" },
 ];
 
 function getAuthType(method?: SshAuthMethod): string {
@@ -38,10 +39,15 @@ function buildAuthMethod(
         private_key_path:
           current?.type === "certificate" ? current.private_key_path : "",
       };
-    case "fido2":
+    case "password":
       return {
-        type: "fido2",
-        key_handle: current?.type === "fido2" ? current.key_handle : "",
+        type: "password",
+        vault_key: current?.type === "password" ? current.vault_key : undefined,
+      };
+    case "fido2_resident":
+      return {
+        type: "fido2_resident",
+        application: current?.type === "fido2_resident" ? current.application : undefined,
       };
     default:
       return { type: "agent" };
@@ -67,8 +73,10 @@ export function SshConfigForm({ config, onChange, disabled }: SshConfigFormProps
       update({ auth_method: { ...method, private_key_path: value } });
     } else if (method.type === "certificate") {
       update({ auth_method: { ...method, [field]: value } });
-    } else if (method.type === "fido2" && field === "key_handle") {
-      update({ auth_method: { ...method, key_handle: value } });
+    } else if (method.type === "password" && field === "vault_key") {
+      update({ auth_method: { ...method, vault_key: value || undefined } });
+    } else if (method.type === "fido2_resident" && field === "application") {
+      update({ auth_method: { ...method, application: value || undefined } });
     }
   };
 
@@ -149,16 +157,29 @@ export function SshConfigForm({ config, onChange, disabled }: SshConfigFormProps
           />
         </>
       )}
-      {authType === "fido2" && (
+      {authType === "password" && (
         <Input
-          label="Key Handle"
-          placeholder="FIDO2 key handle"
+          label="Vault Key (optional)"
+          placeholder="Key in vault for stored password"
           value={
-            config.auth_method?.type === "fido2"
-              ? config.auth_method.key_handle
+            config.auth_method?.type === "password"
+              ? config.auth_method.vault_key ?? ""
               : ""
           }
-          onChange={(e) => updateAuthField("key_handle", e.target.value)}
+          onChange={(e) => updateAuthField("vault_key", e.target.value)}
+          disabled={disabled}
+        />
+      )}
+      {authType === "fido2_resident" && (
+        <Input
+          label="Application (optional)"
+          placeholder="e.g. ssh:myapp"
+          value={
+            config.auth_method?.type === "fido2_resident"
+              ? config.auth_method.application ?? ""
+              : ""
+          }
+          onChange={(e) => updateAuthField("application", e.target.value)}
           disabled={disabled}
         />
       )}

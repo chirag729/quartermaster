@@ -9,19 +9,51 @@ import { DropdownMenu } from "../ui/DropdownMenu";
 interface NodeCardProps {
   node: Node;
   onRemove: (nodeId: string) => void;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }
 
-export function NodeCard({ node, onRemove }: NodeCardProps) {
+export function NodeCard({ node, onRemove, selected, onToggleSelect }: NodeCardProps) {
   const navigate = useNavigate();
   const KindIcon = node.kind === "local" ? Monitor : Server;
+  const selectionMode = onToggleSelect !== undefined;
+
+  const handleClick = () => {
+    if (selectionMode) {
+      onToggleSelect?.();
+    } else {
+      navigate(`/fleet/${node.id}`);
+    }
+  };
 
   return (
     <div
-      onClick={() => navigate(`/fleet/${node.id}`)}
-      className="bg-card-light dark:bg-card-dark rounded-xl border border-border-light dark:border-border-dark shadow-sm hover:shadow-md transition-shadow duration-200 p-5 cursor-pointer group"
+      onClick={handleClick}
+      className={clsx(
+        "bg-card-light dark:bg-card-dark rounded-xl border shadow-sm hover:shadow-md transition-all duration-200 p-5 cursor-pointer group",
+        selected
+          ? "border-warm-400 dark:border-warm-500 ring-2 ring-warm-400/30 dark:ring-warm-500/30"
+          : "border-border-light dark:border-border-dark",
+      )}
     >
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2.5">
+          {selectionMode && (
+            <div
+              className="flex items-center"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleSelect?.();
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={!!selected}
+                readOnly
+                className="rounded border-border-light dark:border-border-dark text-warm-500 focus:ring-warm-300/50 cursor-pointer"
+              />
+            </div>
+          )}
           <div
             className={clsx(
               "p-2 rounded-lg",
@@ -41,31 +73,33 @@ export function NodeCard({ node, onRemove }: NodeCardProps) {
             </p>
           </div>
         </div>
-        <div
-          className="opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <DropdownMenu
-            trigger={
-              <button className="p-1 rounded-md hover:bg-warm-100/50 dark:hover:bg-warm-900/20 text-text-secondary-light dark:text-text-secondary-dark">
-                <MoreVertical size={14} />
-              </button>
-            }
-            items={[
-              {
-                label: "Edit",
-                icon: <Pencil size={14} />,
-                onClick: () => navigate(`/fleet/${node.id}`),
-              },
-              {
-                label: "Remove",
-                icon: <Trash2 size={14} />,
-                danger: true,
-                onClick: () => onRemove(node.id),
-              },
-            ]}
-          />
-        </div>
+        {!selectionMode && (
+          <div
+            className="opacity-0 group-hover:opacity-100 transition-opacity"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <DropdownMenu
+              trigger={
+                <button className="p-1 rounded-md hover:bg-warm-100/50 dark:hover:bg-warm-900/20 text-text-secondary-light dark:text-text-secondary-dark">
+                  <MoreVertical size={14} />
+                </button>
+              }
+              items={[
+                {
+                  label: "Edit",
+                  icon: <Pencil size={14} />,
+                  onClick: () => navigate(`/fleet/${node.id}`),
+                },
+                {
+                  label: "Remove",
+                  icon: <Trash2 size={14} />,
+                  danger: true,
+                  onClick: () => onRemove(node.id),
+                },
+              ]}
+            />
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         <NodeStatusBadge status={node.status} />

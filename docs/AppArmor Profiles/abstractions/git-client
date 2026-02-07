@@ -1,0 +1,14 @@
+# vim:syntax=apparmor
+
+# Git client: config, SSH (read-only, no private keys)
+
+  # ── Git config ─────────────────────────────────────────────────
+  owner @{HOME}/.gitconfig r,
+  owner @{HOME}/.gitignore r,
+  owner @{HOME}/.config/git/** r,
+
+  # ── SSH (read-only: config, known_hosts, public keys) ──────────
+  owner @{HOME}/.ssh/ r,
+  owner @{HOME}/.ssh/config r,
+  owner @{HOME}/.ssh/known_hosts* r,
+  owner @{HOME}/.ssh/*.pub r,

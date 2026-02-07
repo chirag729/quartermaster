@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Layers, ListChecks, Shield, Settings, Server, Monitor, Info, Copy, Trash2, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Layers, ListChecks, Shield, Settings, Server, Monitor, Info, Copy, Trash2, Download, GitBranch, type LucideIcon } from "lucide-react";
 import { useToastStore } from "../stores/toastStore";
+import { formatError } from "../lib/formatError";
 import { useBlueprintStore } from "../stores/blueprintStore";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -43,11 +44,12 @@ export function BlueprintDetailPage() {
   const { blueprintId } = useParams<{ blueprintId: string }>();
   const navigate = useNavigate();
   const { addToast } = useToastStore();
-  const { cloneBlueprint, deleteBlueprint } = useBlueprintStore();
+  const { cloneBlueprint, deleteBlueprint, exportBlueprint } = useBlueprintStore();
   const [blueprint, setBlueprint] = useState<Blueprint | null>(null);
   const [loading, setLoading] = useState(true);
   const [taskInfoMap, setTaskInfoMap] = useState<Record<string, TaskInfo>>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [parentBlueprintName, setParentBlueprintName] = useState<string | null>(null);
 
   const loadBlueprint = useCallback(async () => {
     if (!blueprintId) return;
@@ -55,8 +57,20 @@ export function BlueprintDetailPage() {
     try {
       const bp = await api.getBlueprint(blueprintId);
       setBlueprint(bp);
+
+      // Fetch parent blueprint name if this blueprint extends another
+      if (bp.extends) {
+        try {
+          const parent = await api.getBlueprint(bp.extends);
+          setParentBlueprintName(parent.name);
+        } catch {
+          setParentBlueprintName(bp.extends);
+        }
+      } else {
+        setParentBlueprintName(null);
+      }
     } catch (err) {
-      addToast({ type: "error", title: "Failed to load blueprint", message: String(err) });
+      addToast({ type: "error", title: "Failed to load blueprint", message: formatError(err) });
     } finally {
       setLoading(false);
     }
@@ -83,7 +97,7 @@ export function BlueprintDetailPage() {
       addToast({ type: "success", title: "Blueprint cloned", message: `Created "${cloned.name}"` });
       navigate(`/blueprints/${cloned.id}`);
     } catch (err) {
-      addToast({ type: "error", title: "Clone failed", message: String(err) });
+      addToast({ type: "error", title: "Clone failed", message: formatError(err) });
     }
   };
 
@@ -94,7 +108,18 @@ export function BlueprintDetailPage() {
       addToast({ type: "success", title: "Blueprint deleted", message: `"${blueprint.name}" has been deleted.` });
       navigate("/blueprints");
     } catch (err) {
-      addToast({ type: "error", title: "Delete failed", message: String(err) });
+      addToast({ type: "error", title: "Delete failed", message: formatError(err) });
+    }
+  };
+
+  const handleExport = async () => {
+    if (!blueprint) return;
+    try {
+      const homeDir = "~";
+      const outputPath = await exportBlueprint(blueprint.id, homeDir);
+      addToast({ type: "success", title: "Blueprint exported", message: `Exported to ${outputPath}` });
+    } catch (err) {
+      addToast({ type: "error", title: "Export failed", message: formatError(err) });
     }
   };
 
@@ -125,7 +150,7 @@ export function BlueprintDetailPage() {
       setBlueprint(result);
       addToast({ type: "success", title: "Configuration saved" });
     } catch (err) {
-      addToast({ type: "error", title: "Save failed", message: String(err) });
+      addToast({ type: "error", title: "Save failed", message: formatError(err) });
     }
   };
 
@@ -177,6 +202,12 @@ export function BlueprintDetailPage() {
               {blueprint.name}
             </h1>
             {blueprint.is_builtin && <Badge variant="info">Built-in</Badge>}
+            {blueprint.extends && parentBlueprintName && (
+              <Badge>
+                <GitBranch size={12} className="inline mr-1" />
+                Extends: {parentBlueprintName}
+              </Badge>
+            )}
           </div>
           <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mt-0.5">
             {blueprint.description}
@@ -268,6 +299,15 @@ export function BlueprintDetailPage() {
               <CardTitle>Actions</CardTitle>
             </CardHeader>
             <div className="space-y-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                className="w-full"
+                onClick={handleExport}
+              >
+                <Download size={14} />
+                Export Blueprint
+              </Button>
               <Button
                 size="sm"
                 variant="secondary"

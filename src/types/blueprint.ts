@@ -11,6 +11,8 @@ export interface Blueprint {
   description: string;
   icon: string;
   is_builtin: boolean;
+  version: string;
+  extends?: string | null;
   task_entries: BlueprintTaskEntry[];
   created_at: string;
   updated_at: string;

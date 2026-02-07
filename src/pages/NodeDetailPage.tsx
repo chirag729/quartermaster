@@ -1,31 +1,67 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Server, Monitor, Layers, CheckCircle2, Circle, XCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  Server,
+  Monitor,
+  Terminal,
+  Layers,
+  Play,
+  RefreshCw,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  Circle,
+  Clock,
+} from "lucide-react";
 import { useToastStore } from "../stores/toastStore";
 import { useBlueprintStore } from "../stores/blueprintStore";
 import { NodeStatusBadge } from "../components/fleet/NodeStatusBadge";
 import { AssignBlueprintDialog } from "../components/blueprints/AssignBlueprintDialog";
+import { PreRunConfigDialog } from "../components/blueprints/PreRunConfigDialog";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardHeader, CardTitle, CardDescription } from "../components/ui/Card";
 import { Skeleton } from "../components/ui/Skeleton";
+import { EmptyState } from "../components/ui/EmptyState";
+import { Tabs } from "../components/ui/Tabs";
 import { ToastContainer } from "../components/ui/Toast";
 import * as api from "../services/tauriCommands";
+import { formatError } from "../lib/formatError";
 import type { Node } from "../types/node";
 import type { Blueprint } from "../types/blueprint";
-import type { TaskStatus } from "../types/task";
+import type { TaskStateInfo, TaskInfo } from "../types/task";
+
+const PAGE_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "tasks", label: "Tasks" },
+  { id: "shell", label: "Shell" },
+];
 
 export function NodeDetailPage() {
   const { nodeId } = useParams<{ nodeId: string }>();
   const navigate = useNavigate();
   const { addToast } = useToastStore();
   const { blueprints, setBlueprints, assignBlueprint, unassignBlueprint } = useBlueprintStore();
+
   const [node, setNode] = useState<Node | null>(null);
   const [loading, setLoading] = useState(true);
   const [blueprint, setBlueprint] = useState<Blueprint | null>(null);
   const [showAssign, setShowAssign] = useState(false);
   const [assigning, setAssigning] = useState(false);
-  const [taskStates, setTaskStates] = useState<Record<string, TaskStatus>>({});
+  const [activeTab, setActiveTab] = useState("overview");
+
+  // Tasks tab state
+  const [taskStates, setTaskStates] = useState<TaskStateInfo[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [runningTaskId, setRunningTaskId] = useState<string | null>(null);
+  const [syncingAll, setSyncingAll] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showPreRun, setShowPreRun] = useState(false);
+  const [applyingBlueprint, setApplyingBlueprint] = useState(false);
+  const [allTasks, setAllTasks] = useState<TaskInfo[]>([]);
+
+  // ── Load node ──────────────────────────────────────────────────────
 
   const loadNode = useCallback(async () => {
     if (!nodeId) return;
@@ -44,7 +80,7 @@ export function NodeDetailPage() {
         setBlueprint(null);
       }
     } catch (err) {
-      addToast({ type: "error", title: "Failed to load node", message: String(err) });
+      addToast({ type: "error", title: "Failed to load node", message: formatError(err) });
     } finally {
       setLoading(false);
     }
@@ -54,25 +90,49 @@ export function NodeDetailPage() {
     loadNode();
   }, [loadNode]);
 
-  // Load blueprints for the assign dialog
+  // Load blueprints for the assign dialog and tasks for pre-run dialog lookups
   useEffect(() => {
     api.listBlueprints().then(setBlueprints).catch(() => {});
+    api.listTasks().then(setAllTasks).catch(() => {});
   }, [setBlueprints]);
 
-  // Detect task states for blueprint tasks when a blueprint is assigned
-  useEffect(() => {
-    if (!blueprint || !node) return;
-    // Only detect for local nodes
-    if (node.kind !== "local") return;
+  // ── Load per-node task states ──────────────────────────────────────
 
-    api.detectAllStates().then((tasks) => {
-      const stateMap: Record<string, TaskStatus> = {};
-      for (const t of tasks) {
-        stateMap[t.id] = t.status;
+  const loadTaskStates = useCallback(async () => {
+    if (!nodeId) return;
+    setTasksLoading(true);
+    try {
+      const states = await api.listTasksForNode(nodeId);
+      setTaskStates(states);
+    } catch (err) {
+      addToast({ type: "error", title: "Failed to load task states", message: formatError(err) });
+    } finally {
+      setTasksLoading(false);
+    }
+  }, [nodeId, addToast]);
+
+  useEffect(() => {
+    if (activeTab === "tasks" && nodeId) {
+      loadTaskStates();
+    }
+  }, [activeTab, nodeId, loadTaskStates]);
+
+  // ── Refresh all data ───────────────────────────────────────────────
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadNode();
+      if (activeTab === "tasks") {
+        await loadTaskStates();
       }
-      setTaskStates(stateMap);
-    }).catch(() => {});
-  }, [blueprint, node]);
+      addToast({ type: "success", title: "Refreshed" });
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // ── Blueprint assign / unassign ────────────────────────────────────
 
   const handleAssign = async (blueprintId: string) => {
     if (!nodeId) return;
@@ -81,9 +141,9 @@ export function NodeDetailPage() {
       await assignBlueprint(nodeId, blueprintId);
       addToast({ type: "success", title: "Blueprint assigned" });
       setShowAssign(false);
-      loadNode();
+      await loadNode();
     } catch (err) {
-      addToast({ type: "error", title: "Failed to assign blueprint", message: String(err) });
+      addToast({ type: "error", title: "Failed to assign blueprint", message: formatError(err) });
     } finally {
       setAssigning(false);
     }
@@ -95,20 +155,140 @@ export function NodeDetailPage() {
       await unassignBlueprint(nodeId);
       addToast({ type: "success", title: "Blueprint unassigned" });
       setBlueprint(null);
-      loadNode();
+      await loadNode();
     } catch (err) {
-      addToast({ type: "error", title: "Failed to unassign blueprint", message: String(err) });
+      addToast({ type: "error", title: "Failed to unassign blueprint", message: formatError(err) });
     }
   };
+
+  // ── Task execution ─────────────────────────────────────────────────
+
+  const handleRunTask = async (taskId: string) => {
+    if (!nodeId) return;
+    setRunningTaskId(taskId);
+    try {
+      await api.executeTask(taskId, nodeId, node?.blueprint_id ?? undefined);
+      addToast({ type: "success", title: "Task completed", message: taskId });
+      await loadTaskStates();
+    } catch (err) {
+      addToast({ type: "error", title: `Task failed: ${taskId}`, message: formatError(err) });
+    } finally {
+      setRunningTaskId(null);
+    }
+  };
+
+  const handleSyncAll = async () => {
+    if (!nodeId) return;
+    const outOfSync = taskStates.filter(
+      (t) => t.config_drifted || t.version_changed || t.status === "failed",
+    );
+    if (outOfSync.length === 0) {
+      addToast({ type: "info", title: "All tasks are in sync" });
+      return;
+    }
+    setSyncingAll(true);
+    try {
+      for (const task of outOfSync) {
+        await api.executeTask(task.id, nodeId, node?.blueprint_id ?? undefined);
+      }
+      addToast({ type: "success", title: "All out-of-sync tasks completed" });
+      await loadTaskStates();
+    } catch (err) {
+      addToast({ type: "error", title: "Sync failed", message: formatError(err) });
+      await loadTaskStates();
+    } finally {
+      setSyncingAll(false);
+    }
+  };
+
+  // ── Terminal ───────────────────────────────────────────────────────
+
+  const handleOpenTerminal = async () => {
+    if (!nodeId) return;
+    try {
+      await api.openNodeTerminal(nodeId);
+    } catch (err) {
+      addToast({ type: "error", title: "Failed to open terminal", message: formatError(err) });
+    }
+  };
+
+  // ── Run blueprint ──────────────────────────────────────────────────
+
+  const handleRunBlueprintClick = () => {
+    if (!nodeId || !node?.blueprint_id || !blueprint) return;
+    setShowPreRun(true);
+  };
+
+  const handleRunBlueprintConfirm = async () => {
+    if (!nodeId || !node?.blueprint_id) return;
+    setApplyingBlueprint(true);
+    try {
+      await api.applyBlueprint(nodeId, node.blueprint_id);
+      setShowPreRun(false);
+      addToast({ type: "success", title: "Blueprint applied" });
+      await loadTaskStates();
+    } catch (err) {
+      addToast({ type: "error", title: "Failed to apply blueprint", message: formatError(err) });
+    } finally {
+      setApplyingBlueprint(false);
+    }
+  };
+
+  // ── Helpers ────────────────────────────────────────────────────────
+
+  function formatDate(iso?: string) {
+    if (!iso) return "---";
+    try {
+      return new Date(iso).toLocaleString();
+    } catch {
+      return iso;
+    }
+  }
+
+  function TaskStatusIcon({ task }: { task: TaskStateInfo }) {
+    if (task.status === "completed" && !task.config_drifted && !task.version_changed) {
+      return <CheckCircle2 size={16} className="text-green-500 shrink-0" />;
+    }
+    if (task.config_drifted || task.version_changed) {
+      return <AlertTriangle size={16} className="text-yellow-500 shrink-0" />;
+    }
+    if (task.status === "failed") {
+      return <XCircle size={16} className="text-red-500 shrink-0" />;
+    }
+    return <Circle size={16} className="text-gray-400 dark:text-gray-600 shrink-0" />;
+  }
+
+  function taskStatusLabel(task: TaskStateInfo): string {
+    if (task.status === "completed" && !task.config_drifted && !task.version_changed) {
+      return "Installed";
+    }
+    if (task.config_drifted) return "Config drifted";
+    if (task.version_changed) return "Version changed";
+    if (task.status === "failed") return "Failed";
+    if (task.status === "in_progress") return "Running";
+    return "Not installed";
+  }
+
+  function taskStatusBadgeVariant(task: TaskStateInfo): "success" | "warning" | "danger" | "default" {
+    if (task.status === "completed" && !task.config_drifted && !task.version_changed) return "success";
+    if (task.config_drifted || task.version_changed) return "warning";
+    if (task.status === "failed") return "danger";
+    return "default";
+  }
+
+  // ── Loading skeleton ───────────────────────────────────────────────
 
   if (loading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-48" rounded="lg" />
+        <Skeleton className="h-12 w-full" rounded="xl" />
         <Skeleton className="h-64 w-full" rounded="xl" />
       </div>
     );
   }
+
+  // ── Not found ──────────────────────────────────────────────────────
 
   if (!node) {
     return (
@@ -126,173 +306,388 @@ export function NodeDetailPage() {
 
   const KindIcon = node.kind === "local" ? Monitor : Server;
 
-  // Compute task completion stats
+  // Compute task completion stats from blueprint entries
   const enabledEntries = blueprint?.task_entries.filter((e) => e.enabled) || [];
-  const completedCount = enabledEntries.filter((e) => taskStates[e.task_id] === "completed").length;
+  const taskStateMap = new Map(taskStates.map((t) => [t.id, t]));
+  const completedCount = enabledEntries.filter((e) => {
+    const ts = taskStateMap.get(e.task_id);
+    return ts && ts.status === "completed" && !ts.config_drifted && !ts.version_changed;
+  }).length;
 
-  function StatusIcon({ status }: { status?: TaskStatus }) {
-    if (status === "completed") return <CheckCircle2 size={14} className="text-green-500" />;
-    if (status === "failed") return <XCircle size={14} className="text-red-500" />;
-    return <Circle size={14} className="text-text-secondary-light/40 dark:text-text-secondary-dark/40" />;
-  }
+  // ── Render ─────────────────────────────────────────────────────────
 
   return (
     <div>
-      <Button variant="ghost" size="sm" onClick={() => navigate("/fleet")} className="mb-4">
-        <ArrowLeft size={14} />
-        Back to Fleet
-      </Button>
-      <div className="flex items-center gap-3 mb-6">
-        <div className="p-2.5 rounded-lg bg-warm-100 dark:bg-warm-900/30 text-warm-600 dark:text-warm-400">
-          <KindIcon size={20} />
-        </div>
-        <div>
-          <h1 className="text-xl font-semibold text-text-primary-light dark:text-text-primary-dark">
-            {node.name}
-          </h1>
-          <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
-            {node.hostname}
-          </p>
+      {/* ── Header ─────────────────────────────────────────────────── */}
+      <div className="mb-6">
+        <Button variant="ghost" size="sm" onClick={() => navigate("/fleet")} className="mb-4">
+          <ArrowLeft size={14} />
+          Back to Fleet
+        </Button>
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2.5 rounded-lg bg-warm-100 dark:bg-warm-900/30 text-warm-600 dark:text-warm-400 shrink-0">
+              <KindIcon size={22} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-xl font-semibold text-text-primary-light dark:text-text-primary-dark truncate">
+                  {node.name}
+                </h1>
+                <NodeStatusBadge status={node.status} />
+              </div>
+              <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark truncate">
+                {node.hostname}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <Button variant="secondary" size="sm" onClick={handleOpenTerminal}>
+              <Terminal size={14} />
+              Terminal
+            </Button>
+            {node.blueprint_id && (
+              <Button variant="secondary" size="sm" onClick={handleRunBlueprintClick}>
+                <Play size={14} />
+                Run Blueprint
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              loading={refreshing}
+            >
+              <RefreshCw size={14} />
+              Refresh
+            </Button>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Status</CardTitle>
-          </CardHeader>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Connection</span>
-              <NodeStatusBadge status={node.status} />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Kind</span>
-              <Badge variant={node.kind === "local" ? "default" : "info"}>{node.kind}</Badge>
-            </div>
-            {node.os && (
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">OS</span>
-                <span className="text-sm text-text-primary-light dark:text-text-primary-dark">{node.os}</span>
-              </div>
-            )}
-            {node.last_seen && (
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Last Seen</span>
-                <span className="text-sm text-text-primary-light dark:text-text-primary-dark">{node.last_seen}</span>
-              </div>
-            )}
-          </div>
-        </Card>
+      {/* ── Tabs ───────────────────────────────────────────────────── */}
+      <Tabs
+        tabs={PAGE_TABS}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        className="mb-6"
+      />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Tags</CardTitle>
-          </CardHeader>
-          {node.tags.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {node.tags.map((tag) => (
-                <Badge key={tag} variant="default">{tag}</Badge>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">No tags assigned.</p>
-          )}
-        </Card>
-
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Assigned Blueprint</CardTitle>
-            <CardDescription>
-              {node.blueprint_id
-                ? `Blueprint: ${blueprint?.name || node.blueprint_id}`
-                : "No blueprint assigned to this node yet."}
-            </CardDescription>
-          </CardHeader>
-          {blueprint ? (
+      {/* ── Overview Tab ───────────────────────────────────────────── */}
+      {activeTab === "overview" && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Node metadata */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Node Details</CardTitle>
+            </CardHeader>
             <div className="space-y-3">
-              <div
-                className="flex items-center gap-3 p-3 rounded-lg border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark cursor-pointer hover:bg-warm-50 dark:hover:bg-warm-900/10 transition-colors"
-                onClick={() => navigate(`/blueprints/${blueprint.id}`)}
-              >
-                <div className="p-2 rounded-lg bg-warm-100 dark:bg-warm-900/30 text-warm-600 dark:text-warm-400">
-                  <Layers size={16} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">
-                    {blueprint.name}
-                  </p>
-                  <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark truncate">
-                    {blueprint.description}
-                  </p>
-                </div>
-                <Badge variant="default">{blueprint.task_entries.length} tasks</Badge>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Status</span>
+                <NodeStatusBadge status={node.status} />
               </div>
-
-              {/* Task completion status */}
-              {enabledEntries.length > 0 && Object.keys(taskStates).length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">
-                      Task Completion
-                    </span>
-                    <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                      {completedCount}/{enabledEntries.length} completed
-                    </span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-warm-100 dark:bg-warm-900/30 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-green-500 transition-all duration-300"
-                      style={{ width: `${enabledEntries.length > 0 ? (completedCount / enabledEntries.length) * 100 : 0}%` }}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    {enabledEntries.map((entry) => (
-                      <div key={entry.task_id} className="flex items-center gap-2">
-                        <StatusIcon status={taskStates[entry.task_id]} />
-                        <span className="text-xs text-text-primary-light dark:text-text-primary-dark">
-                          {entry.task_id}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Kind</span>
+                <Badge variant={node.kind === "local" ? "default" : "info"}>{node.kind}</Badge>
+              </div>
+              {node.os && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">OS</span>
+                  <span className="text-sm text-text-primary-light dark:text-text-primary-dark">{node.os}</span>
                 </div>
               )}
-
-              <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setShowAssign(true)}
-                >
-                  Change Blueprint
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleUnassign}
-                >
-                  Unassign
-                </Button>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Last Seen</span>
+                <span className="text-sm text-text-primary-light dark:text-text-primary-dark">
+                  {formatDate(node.last_seen)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Created</span>
+                <span className="text-sm text-text-primary-light dark:text-text-primary-dark">
+                  {formatDate(node.created_at)}
+                </span>
               </div>
             </div>
-          ) : (
-            <div className="border border-dashed border-border-light dark:border-border-dark rounded-lg p-6 text-center">
-              <Layers size={24} className="mx-auto mb-2 text-text-secondary-light/40 dark:text-text-secondary-dark/40" />
-              <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-3">
-                No blueprint assigned to this node.
+          </Card>
+
+          {/* Tags */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Tags</CardTitle>
+            </CardHeader>
+            {node.tags.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {node.tags.map((tag) => (
+                  <Badge key={tag} variant="default">{tag}</Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                No tags assigned.
               </p>
+            )}
+          </Card>
+
+          {/* Assigned blueprint */}
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Assigned Blueprint</CardTitle>
+              <CardDescription>
+                {node.blueprint_id
+                  ? `Blueprint: ${blueprint?.name || node.blueprint_id}`
+                  : "No blueprint assigned to this node yet."}
+              </CardDescription>
+            </CardHeader>
+            {blueprint ? (
+              <div className="space-y-3">
+                <div
+                  className="flex items-center gap-3 p-3 rounded-lg border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark cursor-pointer hover:bg-warm-50 dark:hover:bg-warm-900/10 transition-colors"
+                  onClick={() => navigate(`/blueprints/${blueprint.id}`)}
+                >
+                  <div className="p-2 rounded-lg bg-warm-100 dark:bg-warm-900/30 text-warm-600 dark:text-warm-400">
+                    <Layers size={16} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">
+                      {blueprint.name}
+                    </p>
+                    <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark truncate">
+                      {blueprint.description}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Badge variant="info">v{blueprint.version}</Badge>
+                    {node.applied_blueprint_version && node.applied_blueprint_version !== blueprint.version ? (
+                      <Badge variant="danger">Outdated (v{node.applied_blueprint_version})</Badge>
+                    ) : node.applied_blueprint_version ? (
+                      <Badge variant="success">Up to date</Badge>
+                    ) : null}
+                    <Badge variant="default">{blueprint.task_entries.length} tasks</Badge>
+                  </div>
+                </div>
+
+                {/* Task completion bar */}
+                {enabledEntries.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">
+                        Task Completion
+                      </span>
+                      <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                        {completedCount}/{enabledEntries.length} completed
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-warm-100 dark:bg-warm-900/30 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-green-500 transition-all duration-300"
+                        style={{
+                          width: `${enabledEntries.length > 0 ? (completedCount / enabledEntries.length) * 100 : 0}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => setShowAssign(true)}>
+                    Change Blueprint
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={handleUnassign}>
+                    Unassign
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="border border-dashed border-border-light dark:border-border-dark rounded-lg p-6 text-center">
+                <Layers
+                  size={24}
+                  className="mx-auto mb-2 text-text-secondary-light/40 dark:text-text-secondary-dark/40"
+                />
+                <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-3">
+                  No blueprint assigned to this node.
+                </p>
+                <Button variant="secondary" size="sm" onClick={() => setShowAssign(true)}>
+                  Assign Blueprint
+                </Button>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {/* ── Tasks Tab ──────────────────────────────────────────────── */}
+      {activeTab === "tasks" && (
+        <div className="space-y-4">
+          {/* Top actions */}
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-semibold text-text-primary-light dark:text-text-primary-dark">
+              Task States
+            </h2>
+            <div className="flex items-center gap-2">
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setShowAssign(true)}
+                onClick={handleSyncAll}
+                loading={syncingAll}
+                disabled={syncingAll || tasksLoading}
               >
-                Assign Blueprint
+                <RefreshCw size={14} />
+                Sync All
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={loadTaskStates}
+                loading={tasksLoading}
+              >
+                <RefreshCw size={14} />
+                Refresh
               </Button>
             </div>
+          </div>
+
+          {/* Task list */}
+          {tasksLoading && taskStates.length === 0 ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-16 w-full" rounded="xl" />
+              ))}
+            </div>
+          ) : taskStates.length === 0 ? (
+            <EmptyState
+              icon={<Layers size={32} />}
+              title="No tasks found"
+              description="Assign a blueprint to this node to see task states, or check that tasks are registered."
+            />
+          ) : (
+            <div className="space-y-2">
+              {taskStates.map((task) => {
+                const isDrifted = task.config_drifted || task.version_changed;
+                const isInstalled = task.status === "completed";
+                const isRunning = runningTaskId === task.id;
+
+                return (
+                  <Card key={task.id} padding={false} className="p-4">
+                    <div className="flex items-center gap-3">
+                      <TaskStatusIcon task={task} />
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark truncate">
+                            {task.name}
+                          </span>
+                          <Badge variant={taskStatusBadgeVariant(task)}>
+                            {taskStatusLabel(task)}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark truncate mt-0.5">
+                          {task.description}
+                        </p>
+
+                        {/* Drift details */}
+                        <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                          {task.installed_at && (
+                            <span className="inline-flex items-center gap-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                              <Clock size={11} />
+                              Installed {formatDate(task.installed_at)}
+                            </span>
+                          )}
+                          {task.installed_version && (
+                            <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                              v{task.installed_version}
+                            </span>
+                          )}
+                          {task.config_drifted && (
+                            <span className="inline-flex items-center gap-1 text-xs text-yellow-600 dark:text-yellow-400">
+                              <AlertTriangle size={11} />
+                              Config drifted
+                            </span>
+                          )}
+                          {task.version_changed && (
+                            <span className="inline-flex items-center gap-1 text-xs text-yellow-600 dark:text-yellow-400">
+                              <AlertTriangle size={11} />
+                              Version changed
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <Button
+                        variant={isDrifted || task.status === "failed" ? "primary" : "secondary"}
+                        size="sm"
+                        onClick={() => handleRunTask(task.id)}
+                        loading={isRunning}
+                        disabled={isRunning || syncingAll}
+                        className="shrink-0"
+                      >
+                        <Play size={12} />
+                        {isInstalled && !isDrifted ? "Re-run" : "Run Task"}
+                      </Button>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
           )}
-        </Card>
-      </div>
+        </div>
+      )}
+
+      {/* ── Shell Tab ──────────────────────────────────────────────── */}
+      {activeTab === "shell" && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {node.kind === "local" ? "Local Terminal" : "Remote Shell"}
+              </CardTitle>
+              <CardDescription>
+                {node.kind === "local"
+                  ? "Open a local terminal session on this machine."
+                  : "Open an SSH terminal session to this remote node."}
+              </CardDescription>
+            </CardHeader>
+
+            {node.kind === "remote" && node.ssh_config && (
+              <div className="space-y-3 mb-4">
+                <div className="p-3 rounded-lg bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Host</span>
+                    <span className="text-sm font-mono text-text-primary-light dark:text-text-primary-dark">
+                      {node.ssh_config.host}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Port</span>
+                    <span className="text-sm font-mono text-text-primary-light dark:text-text-primary-dark">
+                      {node.ssh_config.port}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Username</span>
+                    <span className="text-sm font-mono text-text-primary-light dark:text-text-primary-dark">
+                      {node.ssh_config.username}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Auth</span>
+                    <Badge variant="default">{node.ssh_config.auth_method.type}</Badge>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <Button variant="primary" size="md" onClick={handleOpenTerminal}>
+              <Terminal size={16} />
+              {node.kind === "local" ? "Open Local Terminal" : "Open Terminal"}
+            </Button>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Dialogs ────────────────────────────────────────────────── */}
       <AssignBlueprintDialog
         open={showAssign}
         onClose={() => setShowAssign(false)}
@@ -300,6 +695,15 @@ export function NodeDetailPage() {
         blueprints={blueprints}
         currentBlueprintId={node.blueprint_id}
         loading={assigning}
+      />
+      <PreRunConfigDialog
+        open={showPreRun}
+        onClose={() => setShowPreRun(false)}
+        onConfirm={handleRunBlueprintConfirm}
+        blueprint={blueprint}
+        tasks={allTasks}
+        loading={applyingBlueprint}
+        nodeId={nodeId}
       />
       <ToastContainer />
     </div>

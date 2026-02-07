@@ -2,6 +2,10 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+fn default_version() -> String {
+    "1.0.0".to_string()
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BlueprintDefinition {
     pub id: String,
@@ -10,6 +14,11 @@ pub struct BlueprintDefinition {
     pub icon: String,
     #[serde(default)]
     pub builtin: bool,
+    #[serde(default = "default_version")]
+    pub version: String,
+    /// Optional parent blueprint ID to inherit tasks from.
+    #[serde(default)]
+    pub extends: Option<String>,
     pub tasks: Vec<BlueprintTaskDef>,
 }
 
@@ -67,5 +76,32 @@ tasks: []
         let def: BlueprintDefinition = serde_yaml::from_str(yaml).unwrap();
         assert!(def.tasks.is_empty());
         assert!(!def.builtin);
+    }
+
+    #[test]
+    fn parse_blueprint_with_version() {
+        let yaml = r#"
+id: versioned
+name: Versioned Blueprint
+description: Has a version
+icon: Monitor
+version: "2.3.1"
+tasks: []
+"#;
+        let def: BlueprintDefinition = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(def.version, "2.3.1");
+    }
+
+    #[test]
+    fn parse_blueprint_without_version_defaults() {
+        let yaml = r#"
+id: no-version
+name: No Version
+description: Missing version field
+icon: Server
+tasks: []
+"#;
+        let def: BlueprintDefinition = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(def.version, "1.0.0");
     }
 }

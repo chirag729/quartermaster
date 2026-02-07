@@ -7,8 +7,12 @@ tags: [ai, cli]
 privilege: user
 target: any
 
+apparmor:
+  profile: claude-code
+  abstractions: [shell-environment, git-client, claude-code]
+
 detect: |
-  npm list -g @anthropic-ai/claude-code 2>/dev/null | grep -q claude-code
+  command -v claude >/dev/null 2>&1 || npm list -g @anthropic-ai/claude-code 2>/dev/null | grep -q claude-code
 
 steps:
   - name: Install Claude Code via npm

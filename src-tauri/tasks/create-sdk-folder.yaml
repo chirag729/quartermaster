@@ -1,16 +1,17 @@
 id: create-sdk-folder
 name: SDK Folder
-description: Create ~/SDK directory for SDK installations
+description: Create SDK directory for SDK installations
 icon: FolderOpen
 category: Folders
 privilege: user
 target: any
+variables: [sdk_folder]
 
 config:
   - key: path
     label: Folder path
     type: path
-    default: "~/SDK"
+    default: "~/.local/share/sdk"
     required: true
 
 detect: |

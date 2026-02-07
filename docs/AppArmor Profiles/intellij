@@ -8,13 +8,26 @@ profile idea /home/chirag/Applications/IntelliJ/idea*/bin/* {
     #include <abstractions/gnome>
     #include <abstractions/xdg-open>
     #include <abstractions/dbus-session>
-    
+    #include <abstractions/shell-environment>
+    #include <abstractions/claude-code>
+    #include <abstractions/git-client>
+    #include <abstractions/jdk-toolchain>
+    #include <abstractions/flutter-sdk>
+
+    # ── System resources ──────────────────────────────────────────────
     /etc/** r,
     /dev/** r,
     /dev/ptmx rw,
+    /dev/shm/ r,
+    owner /dev/shm/.org.chromium.Chromium.* rwk,
     @{PROC}/ r,
     @{PROC}/** r,
+    owner @{PROC}/@{pid}/coredump_filter rw,
+    owner @{PROC}/@{pid}/oom_score_adj rw,
+    owner @{PROC}/@{pid}/clear_refs w,
     /sys/** r,
+
+    # ── System binaries ───────────────────────────────────────────────
     /bin/* rixm,
     /usr/bin/{[^s]*,?[^n]*,??[^a]*,???[^p]*} rixm,
     /usr/local/bin/** rixm,
@@ -29,7 +42,7 @@ profile idea /home/chirag/Applications/IntelliJ/idea*/bin/* {
 
     /{,snap/core/[0-9]*/,snap/snapd/[0-9]*/}usr/bin/snap mrCx -> snap_browsers,
 
-    owner @{PROC}/@{pid}/coredump_filter rw,
+    # ── Temp / runtime ────────────────────────────────────────────────
     owner /tmp/ r,
     owner /tmp/** rwlkix,
     owner /var/tmp/ r,
@@ -39,58 +52,43 @@ profile idea /home/chirag/Applications/IntelliJ/idea*/bin/* {
     owner /run/user/@{uid}/dconf/user rw,
     owner /run/user/@{uid}/gdm/Xauthority r,
     owner /run/user/@{uid}/keyring/ssh rw,
+    owner /run/user/@{uid}/jb.* rwk,
 
-    /home/chirag/Applications/IntelliJ/** rixm,
+    # ── IntelliJ installation ─────────────────────────────────────────
+    /home/chirag/Applications/IntelliJ/** rwkixm,
 
+    # ── Home directory traversal ──────────────────────────────────────
     / r,
     /home/ r,
     owner @{HOME}/ r,
-    owner @{HOME}/.bashrc r,
-    owner @{HOME}/.bash_aliases r,
-    owner @{HOME}/.cache/JNA/*/ r,
+
+    # ── JetBrains state ───────────────────────────────────────────────
+    owner @{HOME}/.cache/JNA/ rwk,
+    owner @{HOME}/.cache/JNA/** rwk,
     owner @{HOME}/.cache/JetBrains/ r,
     owner @{HOME}/.cache/JetBrains/** rwklix,
+    owner @{HOME}/.cache/mesa_shader_cache/** rwk,
     owner @{HOME}/.cache/ibus/* rw,
     owner @{HOME}/.config/JetBrains/ r,
     owner @{HOME}/.config/JetBrains/** rwkl,
     owner @{HOME}/.config/dconf/user r,
     owner @{HOME}/.config/ibus/bus/ r,
     owner @{HOME}/.config/ibus/bus/* r,
-    owner @{HOME}/.config/flutter/ rwk,
-    owner @{HOME}/.config/flutter/** rwklix,
-    owner @{HOME}/.dart-tool/ rwk,  
-    owner @{HOME}/.dart-tool/** rwklix,   
-    owner @{HOME}/.gitconfig r,
-    owner @{HOME}/.gitignore r,
-    owner @{HOME}/.gradle/ r,
-    owner @{HOME}/.gradle/** rwklixm,
-    owner @{HOME}/.inputrc r,
-    owner @{HOME}/.ivy2/** rwkl,
-    owner @{HOME}/.java/** rwkl,
-    owner @{HOME}/.junie/ r,
-    owner @{HOME}/.junie/** rwkl,
-    owner @{HOME}/.local/bin/* rix,
     owner @{HOME}/.local/share/JetBrains/ r,
     owner @{HOME}/.local/share/JetBrains/** rwklix,
-    owner @{HOME}/.local/share/kotlin/** rwklix,
-    owner @{HOME}/.m2/ r,
-    owner @{HOME}/.m2/** rwkl,
-    owner @{HOME}/.profile r,
-    owner @{HOME}/.ssh/ r,
-    owner @{HOME}/.ssh/config r,
-    owner @{HOME}/.ssh/known_hosts* r,
-    owner @{HOME}/.ssh/*.pub r,
-    /mnt/ r,
-    /mnt/data/ r,
-    /mnt/data/VirtualMachines/ r,
-    /mnt/data/VirtualMachines/Multipass/ r,
-    /mnt/data/VirtualMachines/Multipass/Development-1/ r,
-    /mnt/data/VirtualMachines/Multipass/Development-1 r,
-    /mnt/data/VirtualMachines/Multipass/Development-1/** rwklix,
+    owner @{HOME}/.junie/ r,
+    owner @{HOME}/.junie/** rwkl,
 
+    # ── Project workspace ─────────────────────────────────────────────
+    owner @{HOME}/Development/ r,
+    owner @{HOME}/Development/Projects/ r,
+    owner @{HOME}/Development/Projects/** rwklix,
+
+    # ── IPC ───────────────────────────────────────────────────────────
     signal (send,receive) set=(int,term,kill) peer=idea,
-
     ptrace peer=idea,
+    ptrace (read),
+    dbus receive bus="accessibility" path="/org/a11y/atspi/**",
 
 	profile snap_browsers {
 	  #include <abstractions/base>
@@ -137,4 +135,3 @@ profile idea /home/chirag/Applications/IntelliJ/idea*/bin/* {
 	}
 
 }
-

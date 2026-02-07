@@ -1,0 +1,17 @@
+# vim:syntax=apparmor
+
+# Claude Code: binary, config, and state directories
+
+  # ── Binary (symlink target from ~/.local/bin/claude) ───────────
+  owner @{HOME}/.local/share/claude/** rixm,
+
+  # ── Top-level config ───────────────────────────────────────────
+  owner @{HOME}/.claude.json r,
+
+  # ── State directory ────────────────────────────────────────────
+  owner @{HOME}/.claude/ rw,
+  owner @{HOME}/.claude/** rwkl,
+
+  # ── XDG config ─────────────────────────────────────────────────
+  owner @{HOME}/.config/claude-code/ rw,
+  owner @{HOME}/.config/claude-code/** rwk,

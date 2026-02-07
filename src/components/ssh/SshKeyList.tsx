@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { formatError } from "../../lib/formatError";
 import { Key, Plus, Shield } from "lucide-react";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -25,7 +26,7 @@ export function SshKeyList() {
       const result = await listSshKeys();
       setKeys(result);
     } catch (err) {
-      setError(String(err));
+      setError(formatError(err));
     } finally {
       setLoading(false);
     }
@@ -40,7 +41,7 @@ export function SshKeyList() {
         const result = await listSshKeys();
         if (!cancelled) setKeys(result);
       } catch (err) {
-        if (!cancelled) setError(String(err));
+        if (!cancelled) setError(formatError(err));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -61,7 +62,7 @@ export function SshKeyList() {
       setComment("");
       await loadKeys();
     } catch (err) {
-      setGenerateError(String(err));
+      setGenerateError(formatError(err));
     } finally {
       setGenerating(false);
     }

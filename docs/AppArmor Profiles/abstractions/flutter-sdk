@@ -1,0 +1,19 @@
+# vim:syntax=apparmor
+
+# Flutter SDK: Flutter config, Dart tools, pub cache, Android config
+
+  # ── Flutter config ─────────────────────────────────────────────
+  owner @{HOME}/.config/flutter/ rwk,
+  owner @{HOME}/.config/flutter/** rwklix,
+
+  # ── Dart tools ─────────────────────────────────────────────────
+  owner @{HOME}/.dart-tool/ rwk,
+  owner @{HOME}/.dart-tool/** rwklix,
+
+  # ── Pub cache ──────────────────────────────────────────────────
+  owner @{HOME}/.pub-cache/ rw,
+  owner @{HOME}/.pub-cache/** rwk,
+
+  # ── Android config ─────────────────────────────────────────────
+  owner @{HOME}/.android/ rw,
+  owner @{HOME}/.android/** rwk,

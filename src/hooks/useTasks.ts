@@ -3,6 +3,7 @@ import { useTaskStore } from "../stores/taskStore";
 import { useToastStore } from "../stores/toastStore";
 import { useTauriEvent } from "./useTauriEvent";
 import * as api from "../services/tauriCommands";
+import { formatError } from "../lib/formatError";
 import type { TaskProgressEvent, TaskStateChangedEvent } from "../types/events";
 
 export function useTasks() {
@@ -19,7 +20,7 @@ export function useTasks() {
       const result = await api.detectAllStates();
       setTasks(result);
     } catch (err) {
-      addToast({ type: "error", title: "Failed to load tasks", message: String(err) });
+      addToast({ type: "error", title: "Failed to load tasks", message: formatError(err) });
     } finally {
       setLoading(false);
     }
@@ -33,8 +34,8 @@ export function useTasks() {
       updateTaskStatus(taskId, "completed");
       addToast({ type: "success", title: "Task completed", message: `${taskId} finished successfully.` });
     } catch (err) {
-      updateTaskStatus(taskId, "failed", String(err));
-      addToast({ type: "error", title: "Task failed", message: String(err) });
+      updateTaskStatus(taskId, "failed", formatError(err));
+      addToast({ type: "error", title: "Task failed", message: formatError(err) });
     } finally {
       setExecuting(null);
     }

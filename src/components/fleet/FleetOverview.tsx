@@ -11,9 +11,20 @@ interface FleetOverviewProps {
   loading: boolean;
   onRemoveNode: (nodeId: string) => void;
   onAddNode: () => void;
+  selectionMode?: boolean;
+  selectedNodeIds?: string[];
+  onToggleSelection?: (nodeId: string) => void;
 }
 
-export function FleetOverview({ nodes, loading, onRemoveNode, onAddNode }: FleetOverviewProps) {
+export function FleetOverview({
+  nodes,
+  loading,
+  onRemoveNode,
+  onAddNode,
+  selectionMode,
+  selectedNodeIds,
+  onToggleSelection,
+}: FleetOverviewProps) {
   if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -50,7 +61,12 @@ export function FleetOverview({ nodes, loading, onRemoveNode, onAddNode }: Fleet
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.25, delay: idx * 0.04 }}
           >
-            <NodeCard node={node} onRemove={onRemoveNode} />
+            <NodeCard
+              node={node}
+              onRemove={onRemoveNode}
+              selected={selectionMode ? selectedNodeIds?.includes(node.id) : undefined}
+              onToggleSelect={selectionMode && onToggleSelection ? () => onToggleSelection(node.id) : undefined}
+            />
           </motion.div>
         ))}
       </AnimatePresence>

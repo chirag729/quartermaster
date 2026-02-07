@@ -1,0 +1,20 @@
+# vim:syntax=apparmor
+
+# JDK toolchain: Gradle, Maven, Java, Kotlin, Ivy
+
+  # ── Gradle ─────────────────────────────────────────────────────
+  owner @{HOME}/.gradle/ r,
+  owner @{HOME}/.gradle/** rwklixm,
+
+  # ── Maven ──────────────────────────────────────────────────────
+  owner @{HOME}/.m2/ r,
+  owner @{HOME}/.m2/** rwkl,
+
+  # ── Java ───────────────────────────────────────────────────────
+  owner @{HOME}/.java/** rwkl,
+
+  # ── Ivy ────────────────────────────────────────────────────────
+  owner @{HOME}/.ivy2/** rwkl,
+
+  # ── Kotlin ─────────────────────────────────────────────────────
+  owner @{HOME}/.local/share/kotlin/** rwklix,

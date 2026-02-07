@@ -1,15 +1,42 @@
 use std::collections::HashMap;
 
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::blueprints::{Blueprint, BlueprintTaskEntry};
 use crate::error::AppError;
 use crate::executor::CommandExecutor;
+use crate::executor::dry_run::{DryRunAction, DryRunExecutor};
 use crate::executor::local::LocalExecutor;
 use crate::executor::ssh::SshExecutor;
 use crate::fleet::NodeKind;
 use crate::state::AppState;
 use crate::tasks::TaskStatus;
+
+fn bump_version(current: &str, bump_type: &str) -> String {
+    let parts: Vec<u32> = current
+        .split('.')
+        .map(|p| p.parse().unwrap_or(0))
+        .collect();
+    let (major, minor, patch) = (
+        parts.first().copied().unwrap_or(1),
+        parts.get(1).copied().unwrap_or(0),
+        parts.get(2).copied().unwrap_or(0),
+    );
+    match bump_type {
+        "major" => format!("{}.0.0", major + 1),
+        "minor" => format!("{}.{}.0", major, minor + 1),
+        _ => format!("{}.{}.{}", major, minor, patch + 1),
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BulkApplyResult {
+    pub node_id: String,
+    pub node_name: String,
+    pub success: bool,
+    pub error: Option<String>,
+}
 
 #[tauri::command]
 pub async fn list_blueprints(state: State<'_, AppState>) -> Result<Vec<Blueprint>, AppError> {
@@ -38,7 +65,18 @@ pub async fn create_blueprint(
     state: State<'_, AppState>,
 ) -> Result<Blueprint, AppError> {
     let mut manager = state.blueprint_manager.lock().await;
-    manager.create_blueprint(name, description, icon, task_entries)
+    let blueprint = manager.create_blueprint(name, description, icon, task_entries)?;
+    drop(manager);
+
+    let mut log = state.activity_log.lock().await;
+    log.log(
+        "blueprint_created",
+        &blueprint.name,
+        Some(&format!("{} tasks", blueprint.task_entries.len())),
+        true,
+    );
+
+    Ok(blueprint)
 }
 
 #[tauri::command]
@@ -84,6 +122,28 @@ pub async fn update_blueprint(
     for (i, entry) in updated.task_entries.iter_mut().enumerate() {
         entry.order = i as u32;
     }
+
+    // Auto-bump version based on what changed
+    let manager = state.blueprint_manager.lock().await;
+    if let Some(old) = manager.get_blueprint(&updated.id) {
+        let old_task_ids: Vec<&str> = old.task_entries.iter().map(|e| e.task_id.as_str()).collect();
+        let new_task_ids: Vec<&str> = updated.task_entries.iter().map(|e| e.task_id.as_str()).collect();
+
+        if old_task_ids != new_task_ids {
+            // Tasks added or removed: bump minor version
+            updated.version = bump_version(&old.version, "minor");
+        } else {
+            // Check if any config_overrides changed
+            let configs_changed = old.task_entries.iter().zip(updated.task_entries.iter()).any(
+                |(old_entry, new_entry)| old_entry.config_overrides != new_entry.config_overrides,
+            );
+            if configs_changed {
+                updated.version = bump_version(&old.version, "patch");
+            }
+            // If nothing changed, keep the same version
+        }
+    }
+    drop(manager);
 
     let mut manager = state.blueprint_manager.lock().await;
     manager.update_blueprint(updated.clone())?;
@@ -166,8 +226,9 @@ pub async fn assign_blueprint(
 ) -> Result<(), AppError> {
     // Validate blueprint exists
     let bp_manager = state.blueprint_manager.lock().await;
-    bp_manager
+    let bp_name = bp_manager
         .get_blueprint(&blueprint_id)
+        .map(|bp| bp.name.clone())
         .ok_or_else(|| AppError::Blueprint(format!("Blueprint not found: {}", blueprint_id)))?;
     drop(bp_manager);
 
@@ -177,9 +238,20 @@ pub async fn assign_blueprint(
         .get_node(&node_id)
         .cloned()
         .ok_or_else(|| AppError::Fleet(format!("Node not found: {}", node_id)))?;
+    let node_name = node.name.clone();
     let mut updated_node = node;
     updated_node.blueprint_id = Some(blueprint_id);
     fleet_manager.update_node(updated_node)?;
+    drop(fleet_manager);
+
+    let mut log = state.activity_log.lock().await;
+    log.log(
+        "blueprint_assigned",
+        &bp_name,
+        Some(&format!("Assigned to node '{}'", node_name)),
+        true,
+    );
+
     Ok(())
 }
 
@@ -193,9 +265,20 @@ pub async fn unassign_blueprint(
         .get_node(&node_id)
         .cloned()
         .ok_or_else(|| AppError::Fleet(format!("Node not found: {}", node_id)))?;
+    let node_name = node.name.clone();
     let mut updated_node = node;
     updated_node.blueprint_id = None;
     fleet_manager.update_node(updated_node)?;
+    drop(fleet_manager);
+
+    let mut log = state.activity_log.lock().await;
+    log.log(
+        "blueprint_unassigned",
+        &node_name,
+        None,
+        true,
+    );
+
     Ok(())
 }
 
@@ -212,6 +295,9 @@ pub async fn apply_blueprint(
         .get_blueprint(&blueprint_id)
         .cloned()
         .ok_or_else(|| AppError::Blueprint(format!("Blueprint not found: {}", blueprint_id)))?;
+
+    // Resolve inherited entries (merges parent + child)
+    let resolved_entries = bp_manager.resolve_task_entries(&blueprint_id)?;
     drop(bp_manager);
 
     // Verify the node exists and get its kind
@@ -223,9 +309,8 @@ pub async fn apply_blueprint(
     drop(fleet_manager);
 
     // Get enabled entries sorted by order
-    let mut entries: Vec<&BlueprintTaskEntry> = blueprint
-        .task_entries
-        .iter()
+    let mut entries: Vec<BlueprintTaskEntry> = resolved_entries
+        .into_iter()
         .filter(|e| e.enabled)
         .collect();
     entries.sort_by_key(|e| e.order);
@@ -314,6 +399,15 @@ pub async fn apply_blueprint(
         );
     }
 
+    // Record applied blueprint version on the node
+    let mut fleet_manager = state.fleet_manager.lock().await;
+    if let Some(node) = fleet_manager.get_node(&node_id).cloned() {
+        let mut updated = node;
+        updated.applied_blueprint_version = Some(blueprint.version.clone());
+        fleet_manager.update_node(updated)?;
+    }
+    drop(fleet_manager);
+
     // Emit completion
     let _ = app.emit(
         "blueprint-apply-complete",
@@ -323,5 +417,427 @@ pub async fn apply_blueprint(
         }),
     );
 
+    // Send desktop notification
+    crate::notifications::notify_blueprint_applied(&app, &blueprint.name, &node.name);
+
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DryRunResult {
+    pub node_id: String,
+    pub blueprint_id: String,
+    pub task_actions: Vec<DryRunTaskResult>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DryRunTaskResult {
+    pub task_id: String,
+    pub task_name: String,
+    pub status: String,
+    pub actions: Vec<DryRunAction>,
+}
+
+#[tauri::command]
+pub async fn dry_run_blueprint(
+    node_id: String,
+    blueprint_id: String,
+    state: State<'_, AppState>,
+) -> Result<DryRunResult, AppError> {
+    // Get the blueprint
+    let bp_manager = state.blueprint_manager.lock().await;
+    let _blueprint = bp_manager
+        .get_blueprint(&blueprint_id)
+        .cloned()
+        .ok_or_else(|| AppError::Blueprint(format!("Blueprint not found: {}", blueprint_id)))?;
+
+    // Resolve inherited entries (merges parent + child)
+    let resolved_entries = bp_manager.resolve_task_entries(&blueprint_id)?;
+    drop(bp_manager);
+
+    // Verify the node exists and get its kind
+    let fleet_manager = state.fleet_manager.lock().await;
+    let node = fleet_manager
+        .get_node(&node_id)
+        .cloned()
+        .ok_or_else(|| AppError::Fleet(format!("Node not found: {}", node_id)))?;
+    drop(fleet_manager);
+
+    // Get enabled entries sorted by order
+    let mut entries: Vec<BlueprintTaskEntry> = resolved_entries
+        .into_iter()
+        .filter(|e| e.enabled)
+        .collect();
+    entries.sort_by_key(|e| e.order);
+
+    // Choose the real executor based on node kind (used as inner for dry-run)
+    let real_exec: Box<dyn CommandExecutor> = match node.kind {
+        NodeKind::Local => Box::new(LocalExecutor::new()),
+        NodeKind::Remote => {
+            let ssh_config = node.ssh_config.as_ref().ok_or_else(|| {
+                AppError::Ssh(format!("Remote node '{}' has no SSH configuration", node.name))
+            })?;
+            Box::new(SshExecutor::new(
+                ssh_config.host.clone(),
+                ssh_config.port,
+                ssh_config.username.clone(),
+            ))
+        }
+    };
+
+    // Wrap with dry-run executor
+    let dry_exec = DryRunExecutor::new(real_exec);
+
+    let mut task_actions = Vec::new();
+
+    for entry in &entries {
+        let task = match state.registry.get(&entry.task_id) {
+            Some(t) => t,
+            None => continue,
+        };
+
+        // Merge config: base task config + blueprint overrides
+        let config = state.config.lock().await;
+        let mut task_config: HashMap<String, serde_json::Value> = config
+            .data
+            .task_configs
+            .get(&entry.task_id)
+            .cloned()
+            .unwrap_or_default();
+        drop(config);
+
+        for (k, v) in &entry.config_overrides {
+            task_config.insert(k.clone(), v.clone());
+        }
+
+        // Detect state using the dry-run executor (reads pass through to inner)
+        let status = task.detect_state(&task_config, &dry_exec).await;
+
+        if status == TaskStatus::Completed {
+            // Clear any actions that accumulated during detect_state
+            dry_exec.take_actions();
+            task_actions.push(DryRunTaskResult {
+                task_id: entry.task_id.clone(),
+                task_name: task.name().to_string(),
+                status: "already_completed".to_string(),
+                actions: vec![],
+            });
+            continue;
+        }
+
+        // Clear any actions that may have accumulated from detect_state
+        dry_exec.take_actions();
+
+        // Execute with dry-run executor (mutations are intercepted)
+        let no_op_progress: crate::tasks::ProgressCallback =
+            Box::new(|_progress, _message| {});
+
+        let exec_result = task.execute(&task_config, &dry_exec, &no_op_progress).await;
+
+        let actions = dry_exec.take_actions();
+
+        match exec_result {
+            Ok(()) => {
+                task_actions.push(DryRunTaskResult {
+                    task_id: entry.task_id.clone(),
+                    task_name: task.name().to_string(),
+                    status: "would_run".to_string(),
+                    actions,
+                });
+            }
+            Err(_) => {
+                task_actions.push(DryRunTaskResult {
+                    task_id: entry.task_id.clone(),
+                    task_name: task.name().to_string(),
+                    status: "skipped".to_string(),
+                    actions,
+                });
+            }
+        }
+    }
+
+    Ok(DryRunResult {
+        node_id,
+        blueprint_id,
+        task_actions,
+    })
+}
+
+#[tauri::command]
+pub async fn apply_blueprint_bulk(
+    node_ids: Vec<String>,
+    blueprint_id: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Vec<BulkApplyResult>, AppError> {
+    // Validate the blueprint exists first
+    let bp_manager = state.blueprint_manager.lock().await;
+    let blueprint = bp_manager
+        .get_blueprint(&blueprint_id)
+        .cloned()
+        .ok_or_else(|| AppError::Blueprint(format!("Blueprint not found: {}", blueprint_id)))?;
+
+    // Resolve inherited entries (merges parent + child)
+    let resolved_entries = bp_manager.resolve_task_entries(&blueprint_id)?;
+    drop(bp_manager);
+
+    let total = node_ids.len();
+    let mut results: Vec<BulkApplyResult> = Vec::with_capacity(total);
+
+    // Get enabled entries sorted by order (shared across all nodes)
+    let mut entries: Vec<BlueprintTaskEntry> = resolved_entries
+        .into_iter()
+        .filter(|e| e.enabled)
+        .collect();
+    entries.sort_by_key(|e| e.order);
+
+    // Iterate through each node sequentially to avoid overwhelming SSH connections
+    for (i, node_id) in node_ids.iter().enumerate() {
+        // Look up the node
+        let fleet_manager = state.fleet_manager.lock().await;
+        let node = match fleet_manager.get_node(node_id).cloned() {
+            Some(n) => n,
+            None => {
+                results.push(BulkApplyResult {
+                    node_id: node_id.clone(),
+                    node_name: "Unknown".to_string(),
+                    success: false,
+                    error: Some(format!("Node not found: {}", node_id)),
+                });
+                continue;
+            }
+        };
+        drop(fleet_manager);
+
+        let node_name = node.name.clone();
+
+        // Emit bulk progress event
+        let _ = app.emit(
+            "bulk-blueprint-progress",
+            serde_json::json!({
+                "completed": i,
+                "total": total,
+                "current_node_id": node_id,
+                "current_node_name": node_name,
+            }),
+        );
+
+        // Build the executor for this node
+        let exec: Box<dyn CommandExecutor> = match node.kind {
+            NodeKind::Local => Box::new(LocalExecutor::new()),
+            NodeKind::Remote => {
+                match node.ssh_config.as_ref() {
+                    Some(ssh_config) => Box::new(SshExecutor::new(
+                        ssh_config.host.clone(),
+                        ssh_config.port,
+                        ssh_config.username.clone(),
+                    )),
+                    None => {
+                        results.push(BulkApplyResult {
+                            node_id: node_id.clone(),
+                            node_name,
+                            success: false,
+                            error: Some(format!(
+                                "Remote node '{}' has no SSH configuration",
+                                node.name
+                            )),
+                        });
+                        continue;
+                    }
+                }
+            }
+        };
+
+        // Run the blueprint tasks for this node, catching errors per-node
+        let mut node_error: Option<String> = None;
+        for entry in &entries {
+            let task = match state.registry.get(&entry.task_id) {
+                Some(t) => t,
+                None => continue,
+            };
+
+            // Merge config: base task config + blueprint overrides
+            let config = state.config.lock().await;
+            let mut task_config: HashMap<String, serde_json::Value> = config
+                .data
+                .task_configs
+                .get(&entry.task_id)
+                .cloned()
+                .unwrap_or_default();
+            drop(config);
+
+            for (k, v) in &entry.config_overrides {
+                task_config.insert(k.clone(), v.clone());
+            }
+
+            // Detect state - skip if already completed
+            let status = task.detect_state(&task_config, exec.as_ref()).await;
+            if status == TaskStatus::Completed {
+                continue;
+            }
+
+            // Execute with progress callback
+            let app_handle = app.clone();
+            let tid = entry.task_id.clone();
+            let nid = node_id.clone();
+            let progress_cb: crate::tasks::ProgressCallback =
+                Box::new(move |progress, message| {
+                    let _ = app_handle.emit(
+                        "task-progress",
+                        serde_json::json!({
+                            "node_id": nid,
+                            "task_id": tid,
+                            "progress": progress,
+                            "message": message,
+                        }),
+                    );
+                });
+
+            match task.execute(&task_config, exec.as_ref(), &progress_cb).await {
+                Ok(_) => {
+                    let _ = app.emit(
+                        "task-state-changed",
+                        serde_json::json!({
+                            "node_id": node_id,
+                            "task_id": entry.task_id,
+                            "status": "completed",
+                        }),
+                    );
+                }
+                Err(e) => {
+                    node_error = Some(format!("Task '{}' failed: {}", entry.task_id, e));
+                    break;
+                }
+            }
+        }
+
+        results.push(BulkApplyResult {
+            node_id: node_id.clone(),
+            node_name: node_name.clone(),
+            success: node_error.is_none(),
+            error: node_error,
+        });
+    }
+
+    // Emit final progress (all completed)
+    let _ = app.emit(
+        "bulk-blueprint-progress",
+        serde_json::json!({
+            "completed": total,
+            "total": total,
+            "current_node_id": null,
+            "current_node_name": null,
+        }),
+    );
+
+    // Log bulk operation to activity log
+    let succeeded = results.iter().filter(|r| r.success).count();
+    let failed = results.iter().filter(|r| !r.success).count();
+    let mut log = state.activity_log.lock().await;
+    log.log(
+        "bulk_blueprint_applied",
+        &blueprint.name,
+        Some(&format!(
+            "Applied to {} nodes: {} succeeded, {} failed",
+            total, succeeded, failed
+        )),
+        failed == 0,
+    );
+
+    // Send desktop notification
+    crate::notifications::notify_bulk_complete(&app, &blueprint.name, succeeded, failed);
+
+    Ok(results)
+}
+
+#[tauri::command]
+pub async fn import_blueprint_package(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<Blueprint, AppError> {
+    use crate::blueprints::package;
+
+    let manifest = package::import_blueprint(std::path::Path::new(&path))?;
+
+    // Convert the imported definition to a Blueprint and register it
+    let mut manager = state.blueprint_manager.lock().await;
+    let blueprint = manager.import_from_definition(manifest.definition)?;
+    drop(manager);
+
+    let mut log = state.activity_log.lock().await;
+    log.log(
+        "blueprint_imported",
+        &blueprint.name,
+        Some(&format!("Imported from {}", path)),
+        true,
+    );
+
+    Ok(blueprint)
+}
+
+#[tauri::command]
+pub async fn export_blueprint_package(
+    blueprint_id: String,
+    output_dir: String,
+    state: State<'_, AppState>,
+) -> Result<String, AppError> {
+    use crate::blueprints::package;
+
+    // Verify blueprint exists
+    let manager = state.blueprint_manager.lock().await;
+    let bp = manager
+        .get_blueprint(&blueprint_id)
+        .ok_or_else(|| AppError::Blueprint(format!("Blueprint not found: {}", blueprint_id)))?;
+    let bp_name = bp.name.clone();
+    drop(manager);
+
+    let blueprints_dir = crate::dirs::config_dir().join("blueprints");
+    let output_path = package::export_blueprint(
+        &blueprint_id,
+        &blueprints_dir,
+        std::path::Path::new(&output_dir),
+    )?;
+
+    let mut log = state.activity_log.lock().await;
+    log.log(
+        "blueprint_exported",
+        &bp_name,
+        Some(&format!("Exported to {}", output_path.display())),
+        true,
+    );
+
+    Ok(output_path.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bump_patch_version() {
+        assert_eq!(bump_version("1.0.0", "patch"), "1.0.1");
+        assert_eq!(bump_version("1.2.3", "patch"), "1.2.4");
+        assert_eq!(bump_version("0.0.0", "patch"), "0.0.1");
+    }
+
+    #[test]
+    fn bump_minor_version() {
+        assert_eq!(bump_version("1.0.0", "minor"), "1.1.0");
+        assert_eq!(bump_version("1.2.3", "minor"), "1.3.0");
+        assert_eq!(bump_version("0.0.0", "minor"), "0.1.0");
+    }
+
+    #[test]
+    fn bump_major_version() {
+        assert_eq!(bump_version("1.0.0", "major"), "2.0.0");
+        assert_eq!(bump_version("1.2.3", "major"), "2.0.0");
+        assert_eq!(bump_version("0.0.0", "major"), "1.0.0");
+    }
+
+    #[test]
+    fn bump_version_handles_malformed_input() {
+        assert_eq!(bump_version("", "patch"), "0.0.1");
+        assert_eq!(bump_version("1", "minor"), "1.1.0");
+        assert_eq!(bump_version("abc", "major"), "1.0.0");
+    }
 }

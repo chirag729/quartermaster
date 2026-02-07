@@ -67,6 +67,8 @@ mod tests {
             description: "A test blueprint".into(),
             icon: "Star".into(),
             builtin: false,
+            version: "1.0.0".into(),
+            extends: None,
             tasks: vec![BlueprintTaskDef {
                 id: "some-task".into(),
                 enabled: true,

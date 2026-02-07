@@ -35,7 +35,7 @@ function ToastItem({ toast }: { toast: ToastType }) {
           <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark mt-0.5 truncate">{toast.message}</p>
         )}
       </div>
-      <button onClick={() => removeToast(toast.id)} className="p-0.5 rounded hover:bg-warm-100/50 dark:hover:bg-warm-900/20">
+      <button onClick={() => removeToast(toast.id)} aria-label="Dismiss notification" className="p-0.5 rounded hover:bg-warm-100/50 dark:hover:bg-warm-900/20">
         <X size={14} className="text-text-secondary-light dark:text-text-secondary-dark" />
       </button>
     </motion.div>

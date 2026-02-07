@@ -25,11 +25,44 @@ pub struct ConfigData {
     pub profile_configs: HashMap<String, HashMap<String, Value>>,
     #[serde(default)]
     pub installed_profiles: HashMap<String, InstalledProfileState>,
+
+    /// Shared variables — user-level defaults that tasks can reference.
+    /// Keys are variable names (e.g., "dev_folder"), values are user-configured paths/strings.
+    #[serde(default)]
+    pub shared_variables: HashMap<String, String>,
+
+    /// Per-node variable overrides. Outer key is node_id, inner is variable_name → value.
+    #[serde(default)]
+    pub node_variable_overrides: HashMap<String, HashMap<String, String>>,
+
+    /// Installation state tracking: task_id → InstalledTaskState.
+    #[serde(default)]
+    pub installed_tasks: HashMap<String, InstalledTaskState>,
+
+    /// Fleet status polling interval in seconds (default: 30).
+    #[serde(default = "default_poll_interval")]
+    pub fleet_poll_interval: u64,
+
     // Legacy field for migration
     #[serde(default, skip_serializing)]
     pub module_configs: Option<HashMap<String, HashMap<String, Value>>>,
     #[serde(default, skip_serializing)]
     pub completed_modules: Option<Vec<String>>,
+}
+
+fn default_poll_interval() -> u64 {
+    30
+}
+
+/// Tracks the installed state of a task on a specific node.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstalledTaskState {
+    pub task_id: String,
+    pub node_id: String,
+    pub version: Option<String>,
+    pub blueprint_id: Option<String>,
+    pub config_hash: String,
+    pub installed_at: String,
 }
 
 fn default_theme() -> String {
@@ -44,6 +77,10 @@ impl Default for ConfigData {
             completed_tasks: Vec::new(),
             profile_configs: HashMap::new(),
             installed_profiles: HashMap::new(),
+            shared_variables: HashMap::new(),
+            node_variable_overrides: HashMap::new(),
+            installed_tasks: HashMap::new(),
+            fleet_poll_interval: default_poll_interval(),
             module_configs: None,
             completed_modules: None,
         }
@@ -151,12 +188,8 @@ mod tests {
         let manager = ConfigManager {
             data: ConfigData {
                 theme: "dark".to_string(),
-                task_configs: HashMap::new(),
                 completed_tasks: vec!["flutter-sdk".to_string()],
-                profile_configs: HashMap::new(),
-                installed_profiles: HashMap::new(),
-                module_configs: None,
-                completed_modules: None,
+                ..ConfigData::default()
             },
             path: path.clone(),
         };

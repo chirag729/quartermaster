@@ -17,6 +17,8 @@ interface BlueprintState {
   deleteBlueprint: (id: string) => Promise<void>;
   assignBlueprint: (nodeId: string, blueprintId: string) => Promise<void>;
   unassignBlueprint: (nodeId: string) => Promise<void>;
+  importBlueprint: (path: string) => Promise<Blueprint>;
+  exportBlueprint: (blueprintId: string, outputDir: string) => Promise<string>;
 }
 
 export const useBlueprintStore = create<BlueprintState>((set) => ({
@@ -65,5 +67,15 @@ export const useBlueprintStore = create<BlueprintState>((set) => ({
   },
   unassignBlueprint: async (nodeId) => {
     await api.unassignBlueprint(nodeId);
+  },
+  importBlueprint: async (path) => {
+    const bp = await api.importBlueprintPackage(path);
+    set((state) => ({
+      blueprints: [...state.blueprints, bp],
+    }));
+    return bp;
+  },
+  exportBlueprint: async (blueprintId, outputDir) => {
+    return api.exportBlueprintPackage(blueprintId, outputDir);
   },
 }));

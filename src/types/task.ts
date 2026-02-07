@@ -24,6 +24,9 @@ export interface TaskInfo {
   config_schema: ConfigField[];
   status: TaskStatus;
   error_message?: string;
+  supports_uninstall: boolean;
+  installed_version?: string;
+  update_available?: boolean;
   _progress?: number;
   _progressMessage?: string;
 }
@@ -32,4 +35,22 @@ export interface TaskProgress {
   task_id: string;
   progress: number;
   message: string;
+}
+
+/** Extended task info for a specific node, including drift detection. */
+export interface TaskStateInfo extends TaskInfo {
+  config_drifted: boolean;
+  version_changed: boolean;
+  installed_at?: string;
+  installed_version?: string;
+}
+
+/** Installation record for a task on a specific node. */
+export interface InstalledTaskState {
+  task_id: string;
+  node_id: string;
+  installed_at: string;
+  version?: string;
+  blueprint_id?: string;
+  config_hash: string;
 }

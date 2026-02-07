@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatError } from "../../lib/formatError";
 import { Wifi } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
@@ -27,7 +28,7 @@ export function SshConnectionTest({ host, port, username }: SshConnectionTestPro
       const message = await testSshConnection(host, port, username);
       setState({ status: "success", message });
     } catch (err) {
-      setState({ status: "error", message: String(err) });
+      setState({ status: "error", message: formatError(err) });
     }
   };
 
