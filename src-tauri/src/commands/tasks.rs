@@ -9,6 +9,7 @@ use crate::executor::local::LocalExecutor;
 use crate::executor::privileged::PrivilegedLocalExecutor;
 use crate::executor::ssh::SshExecutor;
 use crate::fleet::NodeKind;
+use crate::tasks::execution_log::ExecutionLog;
 use crate::tasks::install_state;
 use crate::tasks::{ExecutionTarget, PrivilegeLevel, TaskInfo};
 use crate::state::AppState;
@@ -233,15 +234,24 @@ pub async fn execute_task(
 
     let app_handle = app.clone();
     let tid = task_id.clone();
+    let nid_for_progress = effective_node_id.clone();
     let progress_cb: crate::tasks::ProgressCallback = Box::new(move |progress, message| {
         let _ = app_handle.emit("task-progress", serde_json::json!({
+            "node_id": nid_for_progress,
             "task_id": tid,
             "progress": progress,
             "message": message,
         }));
     });
 
+    // Create execution log
+    let mut exec_log = ExecutionLog::new(&task_id, Some(&effective_node_id));
+
     let result = task.execute(&task_config, exec.as_ref(), &progress_cb).await;
+
+    // Finalize and save execution log (best-effort)
+    exec_log.finish(result.is_ok());
+    let _ = exec_log.save();
 
     // Log the task execution result
     {
@@ -302,6 +312,35 @@ pub async fn uninstall_task(
             "Task '{}' does not support uninstall",
             task.name()
         )));
+    }
+
+    // Enforce execution_target constraint
+    let is_remote = if let Some(ref nid) = node_id {
+        let fleet_manager = state.fleet_manager.lock().await;
+        let node = fleet_manager
+            .get_node(nid)
+            .ok_or_else(|| AppError::Fleet(format!("Node not found: {}", nid)))?;
+        let remote = node.kind == NodeKind::Remote;
+        drop(fleet_manager);
+        remote
+    } else {
+        false
+    };
+
+    match task.execution_target() {
+        ExecutionTarget::LocalOnly if is_remote => {
+            return Err(AppError::Task(format!(
+                "Task '{}' can only run on local nodes",
+                task_id
+            )));
+        }
+        ExecutionTarget::RemoteOnly if !is_remote => {
+            return Err(AppError::Task(format!(
+                "Task '{}' can only run on remote nodes",
+                task_id
+            )));
+        }
+        _ => {}
     }
 
     // Build executor (respects privilege level for local nodes)
@@ -376,9 +415,16 @@ pub async fn uninstall_task(
         );
     });
 
+    // Create execution log for uninstall
+    let mut exec_log = ExecutionLog::new(&format!("{}_uninstall", task_id), Some(&effective_node_id));
+
     let result = task
         .uninstall(&task_config, exec.as_ref(), &progress_cb)
         .await;
+
+    // Finalize and save execution log (best-effort)
+    exec_log.finish(result.is_ok());
+    let _ = exec_log.save();
 
     // Log the uninstall result
     {
@@ -463,10 +509,14 @@ pub async fn check_task_updates(
     };
 
     let mut results = Vec::new();
+
+    // Clone task_configs and drop lock before the async loop
     let config = state.config.lock().await;
+    let task_configs = config.data.task_configs.clone();
+    drop(config);
 
     for task in state.registry.all() {
-        let task_config = config.data.task_configs
+        let task_config = task_configs
             .get(task.id())
             .cloned()
             .unwrap_or_default();
@@ -490,7 +540,6 @@ pub async fn check_task_updates(
         }
     }
 
-    drop(config);
     Ok(results)
 }
 

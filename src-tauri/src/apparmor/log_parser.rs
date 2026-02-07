@@ -49,7 +49,29 @@ pub async fn parse_audit_log() -> Result<Vec<DenialEvent>, AppError> {
     // Try audit.log first
     let audit_path = "/var/log/audit/audit.log";
     if std::path::Path::new(audit_path).exists() {
-        if let Ok(content) = std::fs::read_to_string(audit_path) {
+        // Read only the last 1MB of the file in a blocking thread
+        let content = tokio::task::spawn_blocking(move || -> Option<String> {
+            use std::io::{Read, Seek, SeekFrom};
+            let mut file = std::fs::File::open(audit_path).ok()?;
+            let len = file.metadata().ok()?.len();
+            const MAX_BYTES: u64 = 1_048_576; // 1MB
+            if len > MAX_BYTES {
+                file.seek(SeekFrom::End(-(MAX_BYTES as i64))).ok()?;
+                // Skip partial first line
+                let mut buf_reader = std::io::BufReader::new(file);
+                let mut skip = String::new();
+                std::io::BufRead::read_line(&mut buf_reader, &mut skip).ok()?;
+                let mut content = String::new();
+                buf_reader.read_to_string(&mut content).ok()?;
+                Some(content)
+            } else {
+                let mut content = String::new();
+                file.read_to_string(&mut content).ok()?;
+                Some(content)
+            }
+        }).await.unwrap_or(None);
+
+        if let Some(content) = content {
             for line in content.lines() {
                 if line.contains("apparmor=\"DENIED\"") {
                     if let Some(denial) = parse_denial_line(line) {

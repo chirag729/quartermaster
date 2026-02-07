@@ -200,36 +200,41 @@ pub async fn uninstall_profile_template(
 pub async fn sync_installed_profiles(
     state: State<'_, AppState>,
 ) -> Result<Vec<SyncResultInfo>, AppError> {
-    let mut config = state.config.lock().await;
-    let installed_ids: Vec<String> = config
-        .data
-        .installed_profiles
-        .keys()
-        .cloned()
-        .collect();
+    // Collect IDs and profile names under lock, then drop before async loop
+    let id_names: Vec<(String, String)> = {
+        let config = state.config.lock().await;
+        config
+            .data
+            .installed_profiles
+            .iter()
+            .map(|(id, s)| (id.clone(), s.profile_name.clone()))
+            .collect()
+    };
 
     let mut results = Vec::new();
 
-    for id in &installed_ids {
-        let profile_name = config
-            .data
-            .installed_profiles
-            .get(id)
-            .map(|s| s.profile_name.clone())
-            .unwrap_or_default();
-
-        let updated = ProfileTemplateManager::sync_profile(
+    for (id, profile_name) in &id_names {
+        // Re-acquire lock for each sync call to avoid holding across awaits
+        let mut config = state.config.lock().await;
+        let updated = match ProfileTemplateManager::sync_profile(
             id,
             &state.profile_templates,
             &state.registry,
             &mut config,
         )
         .await
-        .unwrap_or(false);
+        {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("Warning: sync_profile for '{}' failed: {}", id, e);
+                false
+            }
+        };
+        drop(config);
 
         results.push(SyncResultInfo {
             profile_id: id.clone(),
-            profile_name,
+            profile_name: profile_name.clone(),
             updated,
         });
     }

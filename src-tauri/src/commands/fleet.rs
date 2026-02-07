@@ -64,6 +64,23 @@ pub async fn add_node(
         }
     }
 
+    // Prevent duplicate remote nodes with the same hostname+port
+    if kind == NodeKind::Remote {
+        if let Some(ref ssh) = node.ssh_config {
+            let duplicate = manager.list_nodes().iter().any(|n| {
+                n.kind == NodeKind::Remote
+                    && n.ssh_config.as_ref().map(|s| (&s.host, s.port))
+                        == Some((&ssh.host, ssh.port))
+            });
+            if duplicate {
+                return Err(AppError::Fleet(format!(
+                    "A remote node with host {}:{} already exists.",
+                    ssh.host, ssh.port
+                )));
+            }
+        }
+    }
+
     manager.add_node(node.clone())?;
     drop(manager);
 
@@ -81,6 +98,17 @@ pub async fn add_node(
 #[tauri::command]
 pub async fn update_node(node: Node, state: State<'_, AppState>) -> Result<Node, AppError> {
     let mut manager = state.fleet_manager.lock().await;
+
+    // Verify node exists and kind hasn't changed
+    let existing = manager
+        .get_node(&node.id)
+        .ok_or_else(|| AppError::Fleet(format!("Node not found: {}", node.id)))?;
+    if existing.kind != node.kind {
+        return Err(AppError::Fleet(
+            "Cannot change a node's kind (local/remote). Delete and recreate instead.".to_string(),
+        ));
+    }
+
     manager.update_node(node.clone())?;
     Ok(node)
 }
@@ -88,12 +116,30 @@ pub async fn update_node(node: Node, state: State<'_, AppState>) -> Result<Node,
 #[tauri::command]
 pub async fn remove_node(node_id: String, state: State<'_, AppState>) -> Result<(), AppError> {
     let mut manager = state.fleet_manager.lock().await;
-    let node_name = manager
+    let node = manager
         .get_node(&node_id)
-        .map(|n| n.name.clone())
-        .unwrap_or_else(|| node_id.clone());
+        .ok_or_else(|| AppError::Fleet(format!("Node not found: {}", node_id)))?;
+
+    // Prevent removal of the local node
+    if node.kind == NodeKind::Local {
+        return Err(AppError::Fleet(
+            "Cannot remove the local node. It represents this machine.".to_string(),
+        ));
+    }
+
+    let node_name = node.name.clone();
     manager.remove_node(&node_id)?;
     drop(manager);
+
+    // Clean up config entries referencing this node
+    let mut config = state.config.lock().await;
+    // Remove installed_tasks entries for this node (key format: task_id@node_id)
+    let suffix = format!("@{}", node_id);
+    config.data.installed_tasks.retain(|k, _| !k.ends_with(&suffix));
+    // Remove node variable overrides
+    config.data.node_variable_overrides.remove(&node_id);
+    let _ = config.save();
+    drop(config);
 
     let mut log = state.activity_log.lock().await;
     log.log("node_removed", &node_name, None, true);

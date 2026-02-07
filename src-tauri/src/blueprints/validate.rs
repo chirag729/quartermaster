@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fmt;
 
 use super::yaml_schema::BlueprintDefinition;
@@ -43,11 +44,17 @@ pub fn validate_blueprint(def: &BlueprintDefinition) -> Vec<BlueprintValidationE
         });
     }
 
+    let mut seen_task_ids: HashSet<&str> = HashSet::new();
     for (i, task) in def.tasks.iter().enumerate() {
         if task.id.is_empty() {
             errors.push(BlueprintValidationError {
                 field: format!("tasks[{}].id", i),
                 message: "must not be empty".into(),
+            });
+        } else if !seen_task_ids.insert(&task.id) {
+            errors.push(BlueprintValidationError {
+                field: format!("tasks[{}].id", i),
+                message: format!("duplicate task id \"{}\"", task.id),
             });
         }
     }
@@ -97,6 +104,18 @@ mod tests {
         bp.tasks[0].id = String::new();
         let errors = validate_blueprint(&bp);
         assert!(errors.iter().any(|e| e.field.contains("tasks[0].id")));
+    }
+
+    #[test]
+    fn duplicate_task_id_fails() {
+        let mut bp = minimal_valid_blueprint();
+        bp.tasks.push(BlueprintTaskDef {
+            id: "some-task".into(),
+            enabled: true,
+            config: None,
+        });
+        let errors = validate_blueprint(&bp);
+        assert!(errors.iter().any(|e| e.message.contains("duplicate")));
     }
 
     #[test]

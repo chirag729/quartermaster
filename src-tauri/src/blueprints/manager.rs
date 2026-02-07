@@ -168,14 +168,16 @@ impl BlueprintManager {
     }
 
     pub fn update_blueprint(&mut self, blueprint: Blueprint) -> Result<(), AppError> {
-        self.save_blueprint(&blueprint)?;
-        if let Some(existing) = self.blueprints.iter_mut().find(|b| b.id == blueprint.id) {
-            *existing = blueprint;
-        } else {
+        // Check in-memory existence first (immutable), before writing to disk
+        if !self.blueprints.iter().any(|b| b.id == blueprint.id) {
             return Err(AppError::Blueprint(format!(
                 "Blueprint not found: {}",
                 blueprint.id
             )));
+        }
+        self.save_blueprint(&blueprint)?;
+        if let Some(existing) = self.blueprints.iter_mut().find(|b| b.id == blueprint.id) {
+            *existing = blueprint;
         }
         Ok(())
     }
@@ -382,7 +384,10 @@ impl Blueprint {
                             e.config_overrides
                                 .iter()
                                 .map(|(k, v)| {
-                                    (k.clone(), v.as_str().unwrap_or_default().to_string())
+                                    (k.clone(), match v {
+                                        Value::String(s) => s.clone(),
+                                        other => other.to_string(),
+                                    })
                                 })
                                 .collect(),
                         )

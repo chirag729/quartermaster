@@ -16,7 +16,7 @@ impl fmt::Display for ValidationError {
 }
 
 /// Built-in template variables that are always available.
-const BUILTIN_VARS: &[&str] = &["home", "version", "install_path"];
+const BUILTIN_VARS: &[&str] = &["home", "version"];
 
 /// Validate a TaskDefinition, returning a list of errors (empty = valid).
 pub fn validate_task(def: &TaskDefinition) -> Vec<ValidationError> {
@@ -166,6 +166,16 @@ pub fn validate_task(def: &TaskDefinition) -> Vec<ValidationError> {
     // Validate template variables in detect
     validate_template_vars(&def.detect, &config_keys, &variable_names, "detect", &mut errors);
 
+    // Validate template variables in uninstall steps
+    for (i, step) in def.uninstall.iter().enumerate() {
+        validate_template_vars(&step.run, &config_keys, &variable_names, &format!("uninstall[{}].run", i), &mut errors);
+    }
+
+    // Validate template variables in version_detect
+    if let Some(ref vd) = def.version_detect {
+        validate_template_vars(vd, &config_keys, &variable_names, "version_detect", &mut errors);
+    }
+
     // Validate v2 fields
     if let Some(ref download) = def.download {
         if download.url.is_empty() {
@@ -174,6 +184,7 @@ pub fn validate_task(def: &TaskDefinition) -> Vec<ValidationError> {
                 message: "must not be empty".into(),
             });
         }
+        validate_template_vars(&download.url, &config_keys, &variable_names, "download.url", &mut errors);
         match download.extract.as_str() {
             "tar.gz" | "tgz" | "tar.xz" | "txz" | "tar.bz2" | "tbz2" | "zip" | "none" => {}
             other => {

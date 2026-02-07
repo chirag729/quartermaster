@@ -3,6 +3,9 @@ use tauri::State;
 use crate::error::AppError;
 use crate::state::AppState;
 
+/// Allowed SSH key types for generation
+const ALLOWED_KEY_TYPES: &[&str] = &["ed25519", "ecdsa", "rsa", "ed25519-sk", "ecdsa-sk"];
+
 #[tauri::command]
 pub async fn test_ssh_connection(
     host: String,
@@ -80,14 +83,27 @@ pub async fn generate_ssh_key(
     key_type: String,
     comment: String,
 ) -> Result<SshKeyInfo, AppError> {
+    // Validate key_type against allowed list
+    if !ALLOWED_KEY_TYPES.contains(&key_type.as_str()) {
+        return Err(AppError::Ssh(format!(
+            "Invalid key type '{}'. Allowed types: {}",
+            key_type,
+            ALLOWED_KEY_TYPES.join(", ")
+        )));
+    }
+
     let ssh_dir = dirs::home_dir()
         .unwrap_or_default()
         .join(".ssh");
 
     std::fs::create_dir_all(&ssh_dir)?;
 
-    let key_name = format!("id_{}_{}", key_type.replace('-', "_"),
-        comment.replace(' ', "_").to_lowercase());
+    // Sanitize both key_type and comment to prevent path traversal
+    let safe_type = super::yubikey::sanitize_key_name(&key_type);
+    let safe_comment = super::yubikey::sanitize_key_name(
+        &comment.replace(' ', "_").to_lowercase(),
+    );
+    let key_name = format!("id_{}_{}", safe_type, safe_comment);
     let key_path = ssh_dir.join(&key_name);
 
     // Don't overwrite existing keys
@@ -139,6 +155,20 @@ pub async fn deploy_ssh_key(
     let pub_key = std::fs::read_to_string(&public_key_path)
         .map_err(|e| AppError::Ssh(format!("Failed to read public key: {}", e)))?;
 
+    // Validate public key format: single line starting with a known key type prefix
+    let trimmed = pub_key.trim();
+    let valid_prefixes = [
+        "ssh-rsa", "ssh-ed25519", "ecdsa-sha2-", "ssh-dss",
+        "sk-ssh-ed25519@", "sk-ecdsa-sha2-",
+    ];
+    if trimmed.lines().count() != 1
+        || !valid_prefixes.iter().any(|p| trimmed.starts_with(p))
+    {
+        return Err(AppError::Ssh(
+            "Invalid public key format. Expected a single-line OpenSSH public key.".to_string(),
+        ));
+    }
+
     // Pipe the public key via stdin to avoid shell injection
     let script = "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys";
 
@@ -174,4 +204,36 @@ pub async fn deploy_ssh_key(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn generate_ssh_key_rejects_invalid_key_type() {
+        let result = generate_ssh_key("invalid-type".into(), "test".into()).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid key type"), "Error: {}", err);
+    }
+
+    #[tokio::test]
+    async fn generate_ssh_key_rejects_injection_in_key_type() {
+        let result = generate_ssh_key("; rm -rf /".into(), "test".into()).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid key type"), "Error: {}", err);
+    }
+
+    #[test]
+    fn allowed_key_types_are_valid() {
+        for kt in ALLOWED_KEY_TYPES {
+            assert!(
+                ["ed25519", "ecdsa", "rsa", "ed25519-sk", "ecdsa-sk"].contains(kt),
+                "Unexpected allowed key type: {}",
+                kt
+            );
+        }
+    }
 }

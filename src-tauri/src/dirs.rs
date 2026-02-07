@@ -47,7 +47,10 @@ fn ensure_dir(path: PathBuf) -> PathBuf {
 fn xdg_config_base() -> PathBuf {
     dirs::config_dir().unwrap_or_else(|| {
         dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
+            .unwrap_or_else(|| {
+                eprintln!("Warning: could not determine home directory, falling back to /tmp for config storage");
+                PathBuf::from("/tmp")
+            })
             .join(".config")
     })
 }
@@ -57,7 +60,10 @@ fn xdg_config_base() -> PathBuf {
 fn xdg_data_base() -> PathBuf {
     dirs::data_dir().unwrap_or_else(|| {
         dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
+            .unwrap_or_else(|| {
+                eprintln!("Warning: could not determine home directory, falling back to /tmp for data storage");
+                PathBuf::from("/tmp")
+            })
             .join(".local")
             .join("share")
     })
@@ -68,7 +74,10 @@ fn xdg_data_base() -> PathBuf {
 fn xdg_state_base() -> PathBuf {
     dirs::state_dir().unwrap_or_else(|| {
         dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
+            .unwrap_or_else(|| {
+                eprintln!("Warning: could not determine home directory, falling back to /tmp for state storage");
+                PathBuf::from("/tmp")
+            })
             .join(".local")
             .join("state")
     })
@@ -79,7 +88,10 @@ fn xdg_state_base() -> PathBuf {
 fn xdg_cache_base() -> PathBuf {
     dirs::cache_dir().unwrap_or_else(|| {
         dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
+            .unwrap_or_else(|| {
+                eprintln!("Warning: could not determine home directory, falling back to /tmp for cache storage");
+                PathBuf::from("/tmp")
+            })
             .join(".cache")
     })
 }

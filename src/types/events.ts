@@ -13,12 +13,6 @@ export interface TaskStateChangedEvent {
   status: import("./task").TaskStatus;
 }
 
-export interface NodeStatusChangedEvent {
-  node_id: string;
-  status: string;
-  last_seen: string | null;
-}
-
 export interface BlueprintApplyProgressEvent {
   node_id: string;
   blueprint_id: string;

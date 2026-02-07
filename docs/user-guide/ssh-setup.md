@@ -53,6 +53,25 @@ Key handle: <device-specific handle>
 
 Each authentication requires physical touch on the hardware key.
 
+### Password
+
+Authenticate using a password stored in the encrypted vault.
+
+```
+Auth method: Password
+Vault key: ssh:myserver
+```
+
+The password is never stored in plaintext. Before using password authentication:
+
+1. Create and unlock the vault in **Settings** (see [Settings - Encrypted Vault](settings.md#encrypted-vault)).
+2. Store the SSH password in the vault under a descriptive key (e.g., `ssh:production-server`).
+3. When configuring the remote node, select **Password** as the auth method and specify the vault key.
+
+At connection time, Quartermaster retrieves the password from the unlocked vault and passes it to the SSH client via `sshpass`. If the vault is locked, the connection will fail with a prompt to unlock the vault first.
+
+> **Note**: Password authentication requires `sshpass` to be installed on the local machine. Key-based authentication is recommended where possible for stronger security.
+
 ### Agent
 
 Delegate authentication to the running SSH agent. Quartermaster does not manage keys directly; it relies on keys already loaded into `ssh-agent`.

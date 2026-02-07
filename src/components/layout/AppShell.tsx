@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { PolkitBanner } from "./PolkitBanner";
+import { ToastContainer } from "../ui/Toast";
 
 interface Props {
   children: ReactNode;
@@ -18,6 +19,7 @@ export function AppShell({ children }: Props) {
           {children}
         </main>
       </div>
+      <ToastContainer />
     </div>
   );
 }

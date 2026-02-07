@@ -48,11 +48,16 @@ impl CommandExecutor for PrivilegedLocalExecutor {
     }
 
     async fn write_file(&self, path: &str, content: &str) -> Result<(), AppError> {
-        // Write to a temp file first, then use pkexec to move it into place
+        // Write to a secure temp file (random name, mode 0600), then use pkexec to move it
         let tmp_dir = crate::dirs::cache_dir();
         std::fs::create_dir_all(&tmp_dir)?;
-        let tmp_path = format!("{}/privileged_write.tmp", tmp_dir.display());
-        std::fs::write(&tmp_path, content)?;
+        let tmp_file = tempfile::Builder::new()
+            .prefix("qm-priv-write-")
+            .tempfile_in(&tmp_dir)
+            .map_err(|e| AppError::Task(format!("Failed to create temp file: {}", e)))?;
+
+        std::fs::write(tmp_file.path(), content)?;
+        let tmp_path = tmp_file.path().to_string_lossy().to_string();
 
         let escaped_tmp = tmp_path.replace('\'', "'\\''");
         let escaped_dest = path.replace('\'', "'\\''");
@@ -66,20 +71,21 @@ impl CommandExecutor for PrivilegedLocalExecutor {
             .output()
             .await?;
 
+        // Keep tmp_file alive until after pkexec finishes — drop happens here
+        drop(tmp_file);
+
         if output.status.success() {
             Ok(())
         } else {
-            // Clean up temp file on failure
-            let _ = std::fs::remove_file(&tmp_path);
             let stderr = String::from_utf8_lossy(&output.stderr);
             Err(AppError::Task(format!("Privileged write failed: {}", stderr)))
         }
     }
 
     async fn create_dir_all(&self, path: &str) -> Result<(), AppError> {
-        let escaped = path.replace('\'', "'\\''");
+        // Command::args() bypasses the shell, so no escaping needed — pass path directly
         let output = tokio::process::Command::new("pkexec")
-            .args(["mkdir", "-p", &escaped])
+            .args(["mkdir", "-p", path])
             .output()
             .await?;
 

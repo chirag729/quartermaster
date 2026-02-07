@@ -9,7 +9,6 @@ import { Button } from "../components/ui/Button";
 import { Card, CardHeader, CardTitle, CardDescription } from "../components/ui/Card";
 import { Skeleton } from "../components/ui/Skeleton";
 import { Toggle } from "../components/ui/Toggle";
-import { ToastContainer } from "../components/ui/Toast";
 import { TaskConfigEditor } from "../components/blueprints/TaskConfigEditor";
 import { AddTaskDialog } from "../components/blueprints/AddTaskDialog";
 import * as api from "../services/tauriCommands";
@@ -453,7 +452,6 @@ export function BlueprintDetailPage() {
         tasks={allTasks}
         existingTaskIds={existingTaskIds}
       />
-      <ToastContainer />
     </div>
   );
 }

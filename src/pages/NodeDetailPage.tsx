@@ -25,7 +25,6 @@ import { Card, CardHeader, CardTitle, CardDescription } from "../components/ui/C
 import { Skeleton } from "../components/ui/Skeleton";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Tabs } from "../components/ui/Tabs";
-import { ToastContainer } from "../components/ui/Toast";
 import * as api from "../services/tauriCommands";
 import { formatError } from "../lib/formatError";
 import { useTauriEvent } from "../hooks/useTauriEvent";
@@ -732,7 +731,6 @@ export function NodeDetailPage() {
         loadingMessage={applyProgress ?? undefined}
         nodeId={nodeId}
       />
-      <ToastContainer />
     </div>
   );
 }

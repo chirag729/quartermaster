@@ -64,3 +64,84 @@ Quartermaster automatically migrates data from the legacy path to `~/.config/qua
 - Does not delete the old directory (you can remove `~/.config/machine-setup/` manually after verifying the migration).
 
 No action is required on your part. The migration is transparent and happens only once.
+
+## Encrypted Vault
+
+Quartermaster includes an encrypted credential vault for storing sensitive data such as SSH passwords and API keys.
+
+### Creating a Vault
+
+1. Navigate to **Settings** and find the **Vault** section.
+2. Click **Create Vault** and enter a master password.
+3. The vault is created at `~/.config/quartermaster/vault.enc`, encrypted with AES-256-GCM using a key derived from the master password via Argon2id.
+
+### Using the Vault
+
+- **Unlock**: Enter your master password to decrypt the vault. It remains unlocked in memory for the duration of the session.
+- **Lock**: Explicitly lock the vault or it locks automatically when the application closes. The encryption key is zeroed out in memory.
+- **Store secrets**: Store key-value pairs (e.g., `ssh:myserver` → password). Secrets are encrypted and written to disk immediately.
+- **Retrieve**: When a task or SSH connection needs a stored credential, it retrieves the decrypted value from the in-memory vault.
+
+### Password Authentication with Vault
+
+For remote nodes that require password authentication:
+
+1. Store the SSH password in the vault under a key (e.g., `ssh:production-server`).
+2. When adding or editing a remote node, select **Password** as the auth method and provide the vault key.
+3. During SSH connections, Quartermaster retrieves the password from the unlocked vault. The password is never stored in plaintext on disk.
+
+### Changing the Master Password
+
+Use the **Change Password** option in the vault settings. This re-encrypts the vault with a new key derived from the new password. All stored secrets are preserved.
+
+## Variable System
+
+Quartermaster provides a four-layer variable system that tasks can reference in their scripts using `{{variable_name}}` syntax.
+
+### Precedence Order (highest to lowest)
+
+| Layer | Description | Scope |
+|-------|-------------|-------|
+| **Node variable overrides** | Per-node overrides for specific variables | Single node |
+| **User shared variables** | User-configured defaults | All nodes |
+| **Blueprint config overrides** | Per-blueprint task configuration | Single blueprint |
+| **Task defaults** | Default values declared in the task YAML | All uses of the task |
+
+### Managing Variables
+
+- **Shared variables**: Navigate to **Settings** > **Variables** to set user-level defaults (e.g., `dev_folder` = `/home/user/Development`).
+- **Node overrides**: On a node's detail page, set variable overrides that apply only to that node (e.g., `dev_folder` = `/opt/dev` for a specific server).
+
+Variables are resolved at task execution time. The system allows the same task definition to behave differently across nodes without duplicating task code.
+
+### Built-in Variables
+
+| Variable | Description |
+|----------|-------------|
+| `home` | The home directory of the executing user (from the executor) |
+| `version` | The task's declared version, if any |
+
+## Activity Log
+
+Quartermaster maintains an activity log that records significant actions:
+
+- Task executions (success/failure, node, timestamp)
+- Task uninstalls
+- Blueprint applies
+- Node additions and removals
+
+The log is stored at `~/.config/quartermaster/activity_log.json` with a maximum of 500 entries (oldest entries are pruned automatically).
+
+### Viewing the Log
+
+Navigate to **Settings** > **Activity Log** to view recent actions. Each entry shows:
+
+| Field | Description |
+|-------|-------------|
+| Action | What happened (e.g., `task_executed`, `task_uninstalled`) |
+| Target | The task or resource involved |
+| Detail | Additional context (node ID, error message) |
+| Success | Whether the action succeeded |
+| Timestamp | When the action occurred |
+
+You can clear the activity log from the settings page.

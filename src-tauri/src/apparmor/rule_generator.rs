@@ -48,7 +48,8 @@ fn generate_rule(
     match operation {
         "open" | "mknod" | "mkdir" | "rename_dest" | "truncate" | "unlink" | "rmdir" => {
             let risk = assess_path_risk(name);
-            let rule = format!("  {} {},", name, mask);
+            let quoted = quote_path(name);
+            let rule = format!("  {} {},", quoted, mask);
             let desc = format!("Allow {} access to {}", mask, name);
             let explanation = format!(
                 "The profile tried to {} '{}' with '{}' permissions. This rule grants the requested access.",
@@ -62,7 +63,8 @@ fn generate_rule(
             } else {
                 RiskLevel::High
             };
-            let rule = format!("  {} ix,", name);
+            let quoted = quote_path(name);
+            let rule = format!("  {} ix,", quoted);
             let desc = format!("Allow execution of {}", name);
             let explanation = format!(
                 "The profile tried to execute '{}'. The 'ix' flag inherits the current profile.",
@@ -100,6 +102,15 @@ fn generate_rule(
             );
             (rule, desc, RiskLevel::High, explanation)
         }
+    }
+}
+
+/// Quote a path for AppArmor rules if it contains spaces.
+fn quote_path(path: &str) -> String {
+    if path.contains(' ') {
+        format!("\"{}\"", path)
+    } else {
+        path.to_string()
     }
 }
 

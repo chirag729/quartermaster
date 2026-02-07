@@ -17,7 +17,7 @@ pub async fn vault_is_unlocked(state: State<'_, AppState>) -> Result<bool, AppEr
 
 #[tauri::command]
 pub async fn vault_create(
-    master_password: String,
+    password: String,
     state: State<'_, AppState>,
 ) -> Result<(), AppError> {
     let mut vault = state.vault.lock().await;
@@ -27,16 +27,16 @@ pub async fn vault_create(
                 .to_string(),
         ));
     }
-    vault.create(&master_password)
+    vault.create(&password)
 }
 
 #[tauri::command]
 pub async fn vault_unlock(
-    master_password: String,
+    password: String,
     state: State<'_, AppState>,
 ) -> Result<(), AppError> {
     let mut vault = state.vault.lock().await;
-    vault.unlock(&master_password)
+    vault.unlock(&password)
 }
 
 #[tauri::command]

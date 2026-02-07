@@ -24,7 +24,6 @@ import {
   X,
 } from "lucide-react";
 import clsx from "clsx";
-import { ToastContainer } from "../components/ui/Toast";
 import * as api from "../services/tauriCommands";
 import { formatError } from "../lib/formatError";
 import type { SshKeyInfo } from "../services/tauriCommands";
@@ -1075,7 +1074,6 @@ export function SettingsPage() {
         <YubiKeySection />
       </div>
 
-      <ToastContainer />
     </div>
   );
 }

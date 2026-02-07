@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::PathBuf;
 
 use super::embedded;
 use super::script_task::ScriptTask;
@@ -20,6 +19,18 @@ impl TaskRegistry {
         self.tasks.push(task);
     }
 
+    /// Register a task, replacing any existing task with the same ID.
+    /// Used for user-defined tasks that may override built-in ones.
+    pub fn register_or_replace(&mut self, task: Box<dyn SetupTask>) {
+        let id = task.id().to_string();
+        if let Some(pos) = self.tasks.iter().position(|t| t.id() == id) {
+            eprintln!("Warning: user task '{}' overrides built-in task", id);
+            self.tasks[pos] = task;
+        } else {
+            self.tasks.push(task);
+        }
+    }
+
     pub fn tasks(&self) -> &[Box<dyn SetupTask>] {
         &self.tasks
     }
@@ -34,7 +45,9 @@ impl TaskRegistry {
 
     /// Given a set of task IDs, expand to include all transitive dependencies
     /// and return them in topological order (dependencies first).
-    pub fn resolve_dependencies(&self, task_ids: &[String]) -> Vec<String> {
+    ///
+    /// Returns an error if a dependency cycle is detected.
+    pub fn resolve_dependencies(&self, task_ids: &[String]) -> Result<Vec<String>, String> {
         // Build dependency graph from registry
         let mut deps_map: HashMap<&str, Vec<String>> = HashMap::new();
         for task in &self.tasks {
@@ -116,13 +129,21 @@ impl TaskRegistry {
             }
         }
 
-        sorted
-    }
-}
+        if sorted.len() < required.len() {
+            // Some tasks couldn't be sorted — cycle detected
+            let unsorted: Vec<String> = required
+                .iter()
+                .filter(|id| !sorted.contains(id))
+                .cloned()
+                .collect();
+            return Err(format!(
+                "Dependency cycle detected involving tasks: {}",
+                unsorted.join(", ")
+            ));
+        }
 
-fn user_tasks_dir() -> PathBuf {
-    let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("~/.config"));
-    base.join("quartermaster").join("tasks")
+        Ok(sorted)
+    }
 }
 
 fn load_and_validate_task(path: &std::path::Path) -> Result<ScriptTask, String> {
@@ -149,7 +170,7 @@ pub fn create_registry() -> TaskRegistry {
     }
 
     // Load user tasks from ~/.config/quartermaster/tasks/
-    let user_dir = user_tasks_dir();
+    let user_dir = crate::dirs::user_tasks_dir();
     if let Ok(entries) = std::fs::read_dir(&user_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -158,7 +179,7 @@ pub fn create_registry() -> TaskRegistry {
                 .map_or(false, |e| e == "yaml" || e == "yml")
             {
                 match load_and_validate_task(&path) {
-                    Ok(task) => registry.register(Box::new(task)),
+                    Ok(task) => registry.register_or_replace(Box::new(task)),
                     Err(e) => eprintln!(
                         "Skipping invalid task {}: {}",
                         path.display(),
@@ -179,7 +200,7 @@ mod tests {
     #[test]
     fn resolve_dependencies_adds_transitive_deps() {
         let registry = create_registry();
-        let result = registry.resolve_dependencies(&["flutter-sdk".to_string()]);
+        let result = registry.resolve_dependencies(&["flutter-sdk".to_string()]).unwrap();
         assert!(result.contains(&"create-sdk-folder".to_string()));
         assert!(result.contains(&"flutter-sdk".to_string()));
         // Dependency must come before dependent
@@ -194,7 +215,7 @@ mod tests {
         let result = registry.resolve_dependencies(&[
             "flutter-sdk".to_string(),
             "android-sdk".to_string(),
-        ]);
+        ]).unwrap();
         // create-sdk-folder should appear exactly once
         let count = result.iter().filter(|x| x.as_str() == "create-sdk-folder").count();
         assert_eq!(count, 1);
@@ -205,14 +226,14 @@ mod tests {
     #[test]
     fn resolve_dependencies_no_deps() {
         let registry = create_registry();
-        let result = registry.resolve_dependencies(&["create-development-folder".to_string()]);
+        let result = registry.resolve_dependencies(&["create-development-folder".to_string()]).unwrap();
         assert_eq!(result, vec!["create-development-folder".to_string()]);
     }
 
     #[test]
     fn resolve_dependencies_empty_input() {
         let registry = create_registry();
-        let result = registry.resolve_dependencies(&[]);
+        let result = registry.resolve_dependencies(&[]).unwrap();
         assert!(result.is_empty());
     }
 

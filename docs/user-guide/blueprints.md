@@ -71,6 +71,62 @@ During blueprint application, Quartermaster emits progress events that the UI su
 
 If a task fails, execution halts and the error is surfaced in the UI. You can resolve the issue and re-apply; completed tasks will be detected and skipped.
 
+## Dry Run
+
+Before applying a blueprint to a node, you can preview what would happen without making any changes:
+
+1. Assign the blueprint to a node and click **Dry Run**.
+2. Quartermaster evaluates every enabled task entry, detecting which are already completed and which would execute.
+3. For each task that would run, the dry-run report shows the commands and file operations that would be performed.
+4. No changes are made to the node during a dry run.
+
+This is useful for auditing a blueprint before deploying it to a production server.
+
+## Inheritance (extends)
+
+Blueprints can inherit from a parent blueprint using the `extends` field:
+
+- A child blueprint starts with all task entries from its parent.
+- The child can add new task entries or override configuration for existing ones.
+- During apply, `resolve_task_entries()` merges parent and child entries. Child entries take precedence for tasks that appear in both.
+- This allows you to create a base blueprint (e.g., "Core Development") and extend it with specialized variants (e.g., "ML Development" that adds GPU and Python tasks).
+
+## Versioning
+
+Blueprints track a semver version string that auto-increments when changes are made:
+
+- **Minor version bump** (e.g., `1.0.0` → `1.1.0`): When task entries are added, removed, or reordered, or when a task entry's `enabled` state changes.
+- **Patch version bump** (e.g., `1.0.0` → `1.0.1`): When only `config_overrides` are modified.
+
+The version is used to detect whether a node's applied blueprint is out of date. When a blueprint is applied to a node, the node records the blueprint version. If the blueprint is subsequently modified, the node detail page indicates that an update is available.
+
+## Import and Export (.qmbp)
+
+Blueprints can be packaged as `.qmbp` files for sharing across machines:
+
+### Exporting
+
+1. Navigate to **Blueprints**, select a blueprint, and click **Export**.
+2. Choose an output directory. Quartermaster creates a `.qmbp` file (a zip archive) containing the blueprint definition and all referenced task YAML files.
+
+### Importing
+
+1. Click **Import** on the Blueprints page.
+2. Select a `.qmbp` file. Quartermaster extracts the blueprint and task definitions into the local configuration directory.
+3. Imported tasks are registered in the task library; the blueprint appears in the blueprint list.
+
+Path traversal protections ensure that malformed `.qmbp` files cannot write outside the intended directories.
+
+## Bulk Apply
+
+You can apply a blueprint to multiple nodes simultaneously:
+
+1. On the **Fleet** page, enter selection mode and select the target nodes.
+2. Click **Run Blueprint** in the bulk action bar.
+3. Choose a blueprint from the dialog.
+4. Quartermaster applies the blueprint to each selected node in parallel, emitting per-node progress events.
+5. A summary shows which nodes succeeded and which failed.
+
 ## Restrictions
 
 - Built-in blueprints cannot be deleted. Custom blueprints can be deleted at any time.

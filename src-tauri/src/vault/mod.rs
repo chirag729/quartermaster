@@ -203,7 +203,11 @@ impl Vault {
 
         let content = serde_json::to_string_pretty(&vault_file)
             .map_err(|e| AppError::Vault(format!("Serialization failed: {}", e)))?;
-        std::fs::write(&self.path, content)?;
+
+        // Atomic write: write to temp file then rename
+        let tmp_path = self.path.with_extension("enc.tmp");
+        std::fs::write(&tmp_path, &content)?;
+        std::fs::rename(&tmp_path, &self.path)?;
 
         Ok(())
     }

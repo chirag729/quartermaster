@@ -13,7 +13,6 @@ import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
 import { Card } from "../components/ui/Card";
 import { Dialog } from "../components/ui/Dialog";
-import { ToastContainer } from "../components/ui/Toast";
 import * as api from "../services/tauriCommands";
 import { formatError } from "../lib/formatError";
 import { useDebounce } from "../hooks/useDebounce";
@@ -112,7 +111,7 @@ export function FleetPage() {
         kind: data.kind,
         hostname: data.hostname,
         tags: [],
-        ssh_config:
+        sshConfig:
           data.kind === "remote"
             ? {
                 host: data.sshHost || data.hostname,
@@ -133,6 +132,11 @@ export function FleetPage() {
   };
 
   const handleRemoveNode = async (nodeId: string) => {
+    const node = nodes.find((n) => n.id === nodeId);
+    const name = node?.name ?? nodeId;
+    if (!window.confirm(`Remove node "${name}"? This action cannot be undone.`)) {
+      return;
+    }
     try {
       await api.removeNode(nodeId);
       addToast({ type: "success", title: "Node removed" });
@@ -219,7 +223,7 @@ export function FleetPage() {
             kind: "remote",
             hostname: host.hostname,
             tags: ["ssh-import"],
-            ssh_config: {
+            sshConfig: {
               host: host.hostname,
               port: host.port,
               username: host.username ?? "root",
@@ -531,7 +535,6 @@ export function FleetPage() {
         </div>
       </Dialog>
 
-      <ToastContainer />
     </div>
   );
 }

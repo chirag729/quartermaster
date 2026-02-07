@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { TaskInfo, TaskStateInfo, InstalledTaskState } from "../types/task";
 import type { DenialEvent, PermissionSuggestion, ProfileInfo, ProfileDetail, ApplyPermissionsRequest, ConsolidationResult, ProfileTemplateInfo, ProfileTemplateConfig, SyncResultInfo } from "../types/apparmor";
-import type { AppConfig } from "../types/config";
 import type { Node, NodeKind, NodeStatus, SshConfig, SshHostEntry, YubiKeyInfo, Fido2Credential } from "../types/node";
 import type { Blueprint, BlueprintTaskEntry } from "../types/blueprint";
 
@@ -117,15 +116,6 @@ export async function setProfileTemplateConfig(templateId: string, configValues:
   return invoke("set_profile_template_config", { templateId, configValues });
 }
 
-// Config commands
-export async function getConfig(): Promise<AppConfig> {
-  return invoke("get_config");
-}
-
-export async function setConfig(config: AppConfig): Promise<AppConfig> {
-  return invoke("set_config", { config });
-}
-
 // System commands
 export interface SystemInfo {
   os: string;
@@ -163,7 +153,7 @@ export interface AddNodeParams {
   kind: NodeKind;
   hostname: string;
   tags: string[];
-  ssh_config?: SshConfig;
+  sshConfig?: SshConfig;
 }
 
 export async function addNode(params: AddNodeParams): Promise<Node> {
@@ -319,7 +309,7 @@ export interface CreateBlueprintParams {
   name: string;
   description: string;
   icon: string;
-  task_entries: BlueprintTaskEntry[];
+  taskEntries: BlueprintTaskEntry[];
 }
 
 export async function createBlueprint(params: CreateBlueprintParams): Promise<Blueprint> {

@@ -6,7 +6,7 @@ const HELPER_PATH: &str = "/usr/lib/quartermaster/quartermaster-apparmor-helper"
 
 /// Validate a profile name to prevent path traversal and injection attacks.
 fn validate_profile_name(name: &str) -> Result<(), AppError> {
-    if name.is_empty() || name.contains("..") || name.starts_with('-') {
+    if name.is_empty() || name.contains("..") || name.starts_with('-') || name.starts_with('/') {
         return Err(AppError::AppArmor(format!("Invalid profile name: {}", name)));
     }
     if !name.chars().all(|c| c.is_alphanumeric() || "._/-".contains(c)) {
@@ -226,6 +226,7 @@ pub async fn get_profile_detail(profile_name: &str) -> Result<ProfileDetail, App
 }
 
 fn find_profile_path(profile_name: &str) -> Result<PathBuf, AppError> {
+    validate_profile_name(profile_name)?;
     let search_dirs = ["/etc/apparmor.d", "/etc/apparmor.d/local"];
     let sanitized_name = profile_name.replace('/', ".");
 

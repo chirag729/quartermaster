@@ -11,7 +11,7 @@ use super::{CommandExecutor, CommandOutput};
 const SSH_COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// How the SSH connection should authenticate.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 enum AuthMode {
     /// Rely on the SSH agent or default keys (`BatchMode=yes`).
     AgentOrDefault,
@@ -21,6 +21,21 @@ enum AuthMode {
     Certificate { cert_path: String, key_path: String },
     /// Password via `sshpass -e` (password set in `SSHPASS` env).
     Password(String),
+}
+
+impl std::fmt::Debug for AuthMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthMode::AgentOrDefault => write!(f, "AgentOrDefault"),
+            AuthMode::KeyFile(path) => f.debug_tuple("KeyFile").field(path).finish(),
+            AuthMode::Certificate { cert_path, key_path } => f
+                .debug_struct("Certificate")
+                .field("cert_path", cert_path)
+                .field("key_path", key_path)
+                .finish(),
+            AuthMode::Password(_) => write!(f, "Password(****)"),
+        }
+    }
 }
 
 pub struct SshExecutor {
@@ -149,10 +164,10 @@ fn shell_escape(s: &str) -> String {
 impl CommandExecutor for SshExecutor {
     async fn run_command(&self, cmd: &str, args: &[&str]) -> Result<CommandOutput, AppError> {
         let remote_cmd = if args.is_empty() {
-            cmd.to_string()
+            shell_escape(cmd)
         } else {
             let escaped_args: Vec<String> = args.iter().map(|a| shell_escape(a)).collect();
-            format!("{} {}", cmd, escaped_args.join(" "))
+            format!("{} {}", shell_escape(cmd), escaped_args.join(" "))
         };
 
         let output = timeout(SSH_COMMAND_TIMEOUT, self.ssh_command()
@@ -160,12 +175,12 @@ impl CommandExecutor for SshExecutor {
             .output())
             .await
             .map_err(|_| AppError::Ssh(format!(
-                "SSH command timed out after {}s for {}@{}:{}",
-                SSH_COMMAND_TIMEOUT.as_secs(), self.username, self.host, self.port
+                "SSH command timed out after {}s for {}:{}",
+                SSH_COMMAND_TIMEOUT.as_secs(), self.host, self.port
             )))?
             .map_err(|e| AppError::Ssh(format!(
-                "SSH command failed for {}@{}:{}: {}",
-                self.username, self.host, self.port, e
+                "SSH command failed for {}:{}: {}",
+                self.host, self.port, e
             )))?;
 
         Ok(CommandOutput {

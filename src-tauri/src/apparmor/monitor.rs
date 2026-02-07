@@ -11,7 +11,14 @@ pub async fn start_monitoring(
     app: AppHandle,
     running: Arc<Mutex<bool>>,
 ) -> Result<(), AppError> {
-    *running.lock().await = true;
+    let mut guard = running.lock().await;
+    if *guard {
+        return Err(AppError::AppArmor(
+            "Log monitor is already running".to_string(),
+        ));
+    }
+    *guard = true;
+    drop(guard);
 
     let running_clone = running.clone();
     let app_clone = app.clone();
@@ -57,36 +64,41 @@ pub async fn start_monitoring(
 
             if rx.recv_timeout(std::time::Duration::from_secs(1)).is_ok() {
                 let mut size = last_size.lock().await;
+                let current_size = *size;
 
-                // Seek to the last known position and read only new content
-                let file = match std::fs::File::open(audit_path) {
-                    Ok(f) => f,
-                    Err(_) => continue,
-                };
+                // Run blocking file I/O in a dedicated thread
+                let read_result = tokio::task::spawn_blocking(move || -> Option<(Vec<String>, u64)> {
+                    let file = std::fs::File::open(audit_path).ok()?;
+                    let current_len = file.metadata().map(|m| m.len()).unwrap_or(0);
 
-                let current_len = file.metadata().map(|m| m.len()).unwrap_or(0);
+                    // Handle log rotation: if file shrunk, start from beginning
+                    let seek_pos = if current_len < current_size { 0 } else { current_size };
 
-                // Handle log rotation: if file shrunk, start from beginning
-                let seek_pos = if current_len < *size { 0 } else { *size };
+                    let mut reader = std::io::BufReader::new(file);
+                    reader.seek(SeekFrom::Start(seek_pos)).ok()?;
 
-                let mut reader = std::io::BufReader::new(file);
-                if reader.seek(SeekFrom::Start(seek_pos)).is_err() {
-                    continue;
-                }
+                    let mut denials = Vec::new();
+                    let mut line = String::new();
+                    while reader.read_line(&mut line).unwrap_or(0) > 0 {
+                        if line.contains("apparmor=\"DENIED\"") {
+                            denials.push(line.clone());
+                        }
+                        line.clear();
+                    }
 
-                let mut line = String::new();
-                while reader.read_line(&mut line).unwrap_or(0) > 0 {
-                    if line.contains("apparmor=\"DENIED\"") {
-                        if let Some(denial) = parse_denial_line(&line) {
+                    Some((denials, current_len))
+                }).await;
+
+                if let Ok(Some((denial_lines, new_size))) = read_result {
+                    for line in &denial_lines {
+                        if let Some(denial) = parse_denial_line(line) {
                             let _ = app_clone.emit("apparmor-denial", serde_json::json!({
                                 "denial": denial,
                             }));
                         }
                     }
-                    line.clear();
+                    *size = new_size;
                 }
-
-                *size = current_len;
             }
         }
 

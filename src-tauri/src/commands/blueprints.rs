@@ -90,7 +90,8 @@ pub async fn update_blueprint(
     // ensure its dependencies are also in the entry list
     let mut updated = blueprint;
     let task_ids: Vec<String> = updated.task_entries.iter().map(|e| e.task_id.clone()).collect();
-    let resolved = state.registry.resolve_dependencies(&task_ids);
+    let resolved = state.registry.resolve_dependencies(&task_ids)
+        .map_err(|e| AppError::Blueprint(e))?;
 
     // Add any missing dependency tasks
     let existing_ids: std::collections::HashSet<String> = task_ids.into_iter().collect();
@@ -125,8 +126,19 @@ pub async fn update_blueprint(
         entry.order = i as u32;
     }
 
+    // Single lock for version comparison + write (prevents TOCTOU)
+    let mut manager = state.blueprint_manager.lock().await;
+
+    // Reject updates to built-in blueprints (check the stored version, not the incoming struct)
+    if let Some(old) = manager.get_blueprint(&updated.id) {
+        if old.is_builtin {
+            return Err(AppError::Blueprint(
+                "Cannot modify a built-in blueprint. Clone it first.".to_string(),
+            ));
+        }
+    }
+
     // Auto-bump version based on what changed
-    let manager = state.blueprint_manager.lock().await;
     if let Some(old) = manager.get_blueprint(&updated.id) {
         let old_task_ids: Vec<&str> = old.task_entries.iter().map(|e| e.task_id.as_str()).collect();
         let new_task_ids: Vec<&str> = updated.task_entries.iter().map(|e| e.task_id.as_str()).collect();
@@ -135,9 +147,12 @@ pub async fn update_blueprint(
             // Tasks added or removed: bump minor version
             updated.version = bump_version(&old.version, "minor");
         } else {
-            // Check if any config_overrides changed
+            // Check if any config_overrides or enabled state changed
             let configs_changed = old.task_entries.iter().zip(updated.task_entries.iter()).any(
-                |(old_entry, new_entry)| old_entry.config_overrides != new_entry.config_overrides,
+                |(old_entry, new_entry)| {
+                    old_entry.config_overrides != new_entry.config_overrides
+                        || old_entry.enabled != new_entry.enabled
+                },
             );
             if configs_changed {
                 updated.version = bump_version(&old.version, "patch");
@@ -145,9 +160,7 @@ pub async fn update_blueprint(
             // If nothing changed, keep the same version
         }
     }
-    drop(manager);
 
-    let mut manager = state.blueprint_manager.lock().await;
     manager.update_blueprint(updated.clone())?;
     Ok(updated)
 }
@@ -188,7 +201,8 @@ pub async fn delete_blueprint(
     id: String,
     state: State<'_, AppState>,
 ) -> Result<(), AppError> {
-    let bp_manager = state.blueprint_manager.lock().await;
+    // Hold bp_manager across the entire operation (check + remove)
+    let mut bp_manager = state.blueprint_manager.lock().await;
 
     // Check if builtin
     let bp = bp_manager
@@ -197,26 +211,25 @@ pub async fn delete_blueprint(
     if bp.is_builtin {
         return Err(AppError::Blueprint("Cannot delete a built-in blueprint".to_string()));
     }
-    drop(bp_manager);
 
     // Unassign from any nodes that reference this blueprint
-    let mut fleet_manager = state.fleet_manager.lock().await;
-    let nodes_to_update: Vec<String> = fleet_manager
-        .list_nodes()
-        .iter()
-        .filter(|n| n.blueprint_id.as_deref() == Some(&id))
-        .map(|n| n.id.clone())
-        .collect();
-    for node_id in nodes_to_update {
-        if let Some(node) = fleet_manager.get_node(&node_id).cloned() {
-            let mut updated_node = node;
-            updated_node.blueprint_id = None;
-            fleet_manager.update_node(updated_node)?;
+    {
+        let mut fleet_manager = state.fleet_manager.lock().await;
+        let nodes_to_update: Vec<String> = fleet_manager
+            .list_nodes()
+            .iter()
+            .filter(|n| n.blueprint_id.as_deref() == Some(&id))
+            .map(|n| n.id.clone())
+            .collect();
+        for node_id in nodes_to_update {
+            if let Some(node) = fleet_manager.get_node(&node_id).cloned() {
+                let mut updated_node = node;
+                updated_node.blueprint_id = None;
+                fleet_manager.update_node(updated_node)?;
+            }
         }
     }
-    drop(fleet_manager);
 
-    let mut bp_manager = state.blueprint_manager.lock().await;
     bp_manager.remove_blueprint(&id)?;
     Ok(())
 }
@@ -440,7 +453,18 @@ pub async fn apply_blueprint(
                 );
             });
 
-        task.execute(&task_config, exec, &progress_cb).await?;
+        if let Err(e) = task.execute(&task_config, exec, &progress_cb).await {
+            let _ = app.emit(
+                "blueprint-task-failed",
+                serde_json::json!({
+                    "node_id": node_id,
+                    "blueprint_id": blueprint_id,
+                    "task_id": entry.task_id,
+                    "error": e.to_string(),
+                }),
+            );
+            return Err(e);
+        }
 
         // Record installation state for this task
         {
@@ -879,6 +903,17 @@ pub async fn apply_blueprint_bulk(
                     break;
                 }
             }
+        }
+
+        // Update applied_blueprint_version on successful nodes (matching apply_blueprint)
+        if node_error.is_none() {
+            let mut fleet_manager = state.fleet_manager.lock().await;
+            if let Some(n) = fleet_manager.get_node(node_id).cloned() {
+                let mut updated = n;
+                updated.applied_blueprint_version = Some(blueprint.version.clone());
+                let _ = fleet_manager.update_node(updated);
+            }
+            drop(fleet_manager);
         }
 
         results.push(BulkApplyResult {

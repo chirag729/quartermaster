@@ -4,7 +4,6 @@ import { RefreshCw } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { SearchInput } from "../components/ui/SearchInput";
 import { Badge } from "../components/ui/Badge";
-import { ToastContainer } from "../components/ui/Toast";
 import { useToastStore } from "../stores/toastStore";
 import * as api from "../services/tauriCommands";
 import { formatError } from "../lib/formatError";
@@ -135,7 +134,6 @@ export function TaskLibraryPage() {
       ) : (
         <DashboardGrid tasks={filteredTasks} executing={null} onExecute={() => {}} readOnly />
       )}
-      <ToastContainer />
     </div>
   );
 }

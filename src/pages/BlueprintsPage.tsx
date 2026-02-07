@@ -9,7 +9,6 @@ import { CreateBlueprintDialog } from "../components/blueprints/CreateBlueprintD
 import { ImportBlueprintDialog } from "../components/blueprints/ImportBlueprintDialog";
 import { SearchInput } from "../components/ui/SearchInput";
 import { Button } from "../components/ui/Button";
-import { ToastContainer } from "../components/ui/Toast";
 import * as api from "../services/tauriCommands";
 import { formatError } from "../lib/formatError";
 
@@ -140,7 +139,6 @@ export function BlueprintsPage() {
         onImport={handleImportBlueprint}
         loading={importing}
       />
-      <ToastContainer />
     </div>
   );
 }

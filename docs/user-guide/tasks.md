@@ -155,3 +155,47 @@ Each task can declare a configuration schema that describes its configurable fie
 | `required` | Whether a value must be provided before execution |
 
 Configuration values are set either in the task's base config or overridden per-blueprint via `config_overrides` in the blueprint task entry.
+
+## Task Uninstall
+
+Some tasks support uninstallation, which reverses the changes made during installation. Tasks that support uninstall declare `uninstall` steps in their YAML definition.
+
+To uninstall a task:
+
+1. Navigate to the node detail page.
+2. Find the installed task and click **Uninstall**.
+3. Quartermaster executes the uninstall steps (e.g., removing directories, uninstalling packages).
+4. The task status reverts to `NotStarted` and the installation record is removed.
+
+Not all tasks support uninstall. The UI indicates whether uninstall is available for each task. If a task does not declare uninstall steps, the uninstall option is disabled.
+
+## Update Detection
+
+Quartermaster can detect when a task's defined version differs from the version installed on a node:
+
+1. Navigate to **Check Updates** or use the `check_task_updates` command.
+2. For each task with a `version` field and a `version_detect` command, Quartermaster:
+   - Reads the defined version from the task YAML.
+   - Runs the `version_detect` command on the target node to determine the installed version.
+   - Compares the two. If they differ, an update is flagged.
+3. Tasks with available updates are highlighted in the UI so you can re-apply them.
+
+## Version Tracking
+
+When a task is executed on a node, Quartermaster records an installation state that includes:
+
+| Field | Description |
+|-------|-------------|
+| `task_id` | The task that was installed |
+| `node_id` | The node it was installed on |
+| `version` | The task version at the time of installation |
+| `config_hash` | A hash of the configuration used during installation |
+| `installed_at` | Timestamp of the installation |
+| `blueprint_id` | Which blueprint triggered the installation, if any |
+
+This state enables two drift-detection features:
+
+- **Config drift**: If the task's configuration has changed since it was last installed, the node detail page shows a "config drifted" indicator.
+- **Version drift**: If the task's defined version has been updated since it was last installed, a "version changed" indicator appears.
+
+Both indicators suggest that re-applying the task may be needed to bring the node up to date.

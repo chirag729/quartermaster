@@ -192,7 +192,7 @@ pub fn unpack_blueprint(
         let entry_name = entry.name().to_string();
 
         // Guard against path traversal attacks
-        if entry_name.contains("..") {
+        if entry_name.contains("..") || entry_name.starts_with('/') {
             return Err(AppError::Package(format!(
                 "Archive contains path traversal entry: {}",
                 entry_name
@@ -200,6 +200,28 @@ pub fn unpack_blueprint(
         }
 
         let out_path = dest_dir.join(&entry_name);
+
+        // Verify the resolved path stays within dest_dir
+        let canonical_dest = dest_dir.canonicalize().unwrap_or_else(|_| dest_dir.to_path_buf());
+        // For new files, check the parent exists within dest_dir
+        let resolved = if out_path.exists() {
+            out_path.canonicalize().unwrap_or_else(|_| out_path.clone())
+        } else {
+            // Normalize by resolving parent + joining filename
+            if let Some(parent) = out_path.parent() {
+                let _ = fs::create_dir_all(parent);
+                let canon_parent = parent.canonicalize().unwrap_or_else(|_| parent.to_path_buf());
+                canon_parent.join(out_path.file_name().unwrap_or_default())
+            } else {
+                out_path.clone()
+            }
+        };
+        if !resolved.starts_with(&canonical_dest) {
+            return Err(AppError::Package(format!(
+                "Archive entry escapes destination directory: {}",
+                entry_name
+            )));
+        }
 
         if entry.is_dir() {
             fs::create_dir_all(&out_path)?;
@@ -405,12 +427,29 @@ pub fn export_blueprint(
         fs::copy(&variables_path, staging.path().join(VARIABLES_FILENAME))?;
     }
 
-    // Copy tasks/ directory if present
+    // Copy only task files referenced by the blueprint's task entries
     let tasks_src = config_base.join("tasks");
     if tasks_src.is_dir() {
+        let task_ids: Vec<&str> = _def.tasks.iter().map(|t| t.id.as_str()).collect();
         let tasks_dest = staging.path().join("tasks");
-        fs::create_dir_all(&tasks_dest)?;
-        copy_directory_contents(&tasks_src, &tasks_dest)?;
+        let mut copied_any = false;
+        if let Ok(entries) = fs::read_dir(&tasks_src) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    // Match task files by filename stem against blueprint task IDs
+                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                        if task_ids.contains(&stem) {
+                            if !copied_any {
+                                fs::create_dir_all(&tasks_dest)?;
+                                copied_any = true;
+                            }
+                            fs::copy(&path, tasks_dest.join(entry.file_name()))?;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Copy apparmor/profiles/ if present
@@ -772,6 +811,33 @@ tasks:
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("does not contain manifest.yaml"));
+    }
+
+    #[test]
+    fn unpack_rejects_absolute_path_entry() {
+        let dir = tempdir().unwrap();
+        let dest = tempdir().unwrap();
+
+        // Create a zip with an absolute path entry
+        let qmbp_path = dir.path().join("evil.qmbp");
+        let file = fs::File::create(&qmbp_path).unwrap();
+        let mut zip = ZipWriter::new(file);
+        let options = FileOptions::<()>::default();
+        zip.start_file(MANIFEST_FILENAME, options).unwrap();
+        let manifest = "id: test\nname: Test\ndescription: t\nicon: X\ntasks: []\n";
+        zip.write_all(manifest.as_bytes()).unwrap();
+        zip.start_file("/etc/passwd", options).unwrap();
+        zip.write_all(b"evil content").unwrap();
+        zip.finish().unwrap();
+
+        let result = unpack_blueprint(&qmbp_path, dest.path());
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("path traversal"),
+            "Expected path traversal error, got: {}",
+            err
+        );
     }
 
     // -----------------------------------------------------------------------

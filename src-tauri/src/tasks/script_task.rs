@@ -19,36 +19,52 @@ impl ScriptTask {
         Self { definition }
     }
 
+    /// Escape a value for safe use inside a shell single-quoted string.
+    /// Wraps in single quotes with internal `'` escaped as `'\''`.
+    fn shell_escape_value(value: &str) -> String {
+        let escaped = value.replace('\'', "'\\''");
+        format!("'{}'", escaped)
+    }
+
     /// Build template context from config overrides, falling back to definition defaults.
     /// Also adds `home` from the executor.
+    /// All values are shell-escaped to prevent injection.
     fn build_context(
         &self,
         config: &HashMap<String, Value>,
         home: &str,
     ) -> HashMap<String, String> {
         let mut ctx = HashMap::new();
-        ctx.insert("home".to_string(), home.to_string());
+        ctx.insert("home".to_string(), Self::shell_escape_value(home));
 
         // Inject version if defined
         if let Some(ref version) = self.definition.version {
-            ctx.insert("version".to_string(), version.clone());
+            ctx.insert("version".to_string(), Self::shell_escape_value(version));
         }
 
         for field in &self.definition.config {
             let value = config
                 .get(&field.key)
-                .and_then(|v| v.as_str())
-                .unwrap_or(&field.default)
-                .to_string();
+                .map(|v| match v {
+                    Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                })
+                .unwrap_or_else(|| field.default.clone());
 
-            // Expand ~ in path-type values
+            // Expand leading ~ in path-type values (only ~/... or standalone ~)
             let expanded = if field.field_type == "path" {
-                value.replace('~', home)
+                if value == "~" {
+                    home.to_string()
+                } else if let Some(rest) = value.strip_prefix("~/") {
+                    format!("{}/{}", home, rest)
+                } else {
+                    value
+                }
             } else {
                 value
             };
 
-            ctx.insert(field.key.clone(), expanded);
+            ctx.insert(field.key.clone(), Self::shell_escape_value(&expanded));
         }
 
         ctx
@@ -184,7 +200,11 @@ impl SetupTask for ScriptTask {
 
         match exec.run_command("sh", &["-c", &script]).await {
             Ok(output) if output.status == 0 => TaskStatus::Completed,
-            _ => TaskStatus::NotStarted,
+            Ok(_) => TaskStatus::NotStarted, // Non-zero exit = not installed
+            Err(e) => {
+                eprintln!("Warning: detect_state for '{}' failed: {}", self.definition.id, e);
+                TaskStatus::NotStarted
+            }
         }
     }
 
@@ -328,11 +348,11 @@ mod tests {
     #[test]
     fn template_expansion() {
         let mut ctx = HashMap::new();
-        ctx.insert("home".to_string(), "/home/user".to_string());
-        ctx.insert("path".to_string(), "/home/user/test".to_string());
+        ctx.insert("home".to_string(), "'/home/user'".to_string());
+        ctx.insert("path".to_string(), "'/home/user/test'".to_string());
 
         let result = ScriptTask::expand_template("test -d {{path}} && echo {{home}}", &ctx);
-        assert_eq!(result, "test -d /home/user/test && echo /home/user");
+        assert_eq!(result, "test -d '/home/user/test' && echo '/home/user'");
     }
 
     #[test]
@@ -340,9 +360,9 @@ mod tests {
         let task = ScriptTask::new(make_definition());
         let config = HashMap::new();
         let ctx = task.build_context(&config, "/home/user");
-        assert_eq!(ctx.get("home").unwrap(), "/home/user");
-        // path default is ~/test, ~ expanded to /home/user
-        assert_eq!(ctx.get("path").unwrap(), "/home/user/test");
+        assert_eq!(ctx.get("home").unwrap(), "'/home/user'");
+        // path default is ~/test, ~ expanded to /home/user/test, then shell-escaped
+        assert_eq!(ctx.get("path").unwrap(), "'/home/user/test'");
     }
 
     #[test]
@@ -354,7 +374,84 @@ mod tests {
             Value::String("~/custom".to_string()),
         );
         let ctx = task.build_context(&config, "/home/user");
-        assert_eq!(ctx.get("path").unwrap(), "/home/user/custom");
+        assert_eq!(ctx.get("path").unwrap(), "'/home/user/custom'");
+    }
+
+    #[test]
+    fn shell_escape_basic() {
+        assert_eq!(ScriptTask::shell_escape_value("hello"), "'hello'");
+        assert_eq!(ScriptTask::shell_escape_value("/home/user"), "'/home/user'");
+    }
+
+    #[test]
+    fn shell_escape_single_quotes() {
+        assert_eq!(
+            ScriptTask::shell_escape_value("it's a test"),
+            "'it'\\''s a test'"
+        );
+    }
+
+    #[test]
+    fn shell_escape_special_chars() {
+        assert_eq!(
+            ScriptTask::shell_escape_value("$(whoami)"),
+            "'$(whoami)'"
+        );
+        assert_eq!(
+            ScriptTask::shell_escape_value("foo; rm -rf /"),
+            "'foo; rm -rf /'"
+        );
+    }
+
+    #[test]
+    fn build_context_non_string_json_values() {
+        let task = ScriptTask::new(make_definition());
+        let mut config = HashMap::new();
+        // Non-string value (number) should be converted to string
+        config.insert("path".to_string(), serde_json::json!(42));
+        let ctx = task.build_context(&config, "/home/user");
+        // 42 is not a path starting with ~, so no tilde expansion, just shell-escaped
+        assert_eq!(ctx.get("path").unwrap(), "'42'");
+    }
+
+    #[test]
+    fn build_context_boolean_json_value() {
+        let mut def = make_definition();
+        def.config.push(ConfigFieldDef {
+            key: "enabled".into(),
+            label: "Enabled".into(),
+            field_type: "boolean".into(),
+            default: "true".into(),
+            options: None,
+            required: None,
+        });
+        let task = ScriptTask::new(def);
+        let mut config = HashMap::new();
+        config.insert("enabled".to_string(), serde_json::json!(false));
+        let ctx = task.build_context(&config, "/home/user");
+        assert_eq!(ctx.get("enabled").unwrap(), "'false'");
+    }
+
+    #[test]
+    fn tilde_expansion_only_leading() {
+        let task = ScriptTask::new(make_definition());
+        let mut config = HashMap::new();
+        // Tilde in the middle should NOT be expanded
+        config.insert(
+            "path".to_string(),
+            Value::String("/some/path/~file".to_string()),
+        );
+        let ctx = task.build_context(&config, "/home/user");
+        assert_eq!(ctx.get("path").unwrap(), "'/some/path/~file'");
+    }
+
+    #[test]
+    fn tilde_expansion_standalone() {
+        let task = ScriptTask::new(make_definition());
+        let mut config = HashMap::new();
+        config.insert("path".to_string(), Value::String("~".to_string()));
+        let ctx = task.build_context(&config, "/home/user");
+        assert_eq!(ctx.get("path").unwrap(), "'/home/user'");
     }
 
     #[test]

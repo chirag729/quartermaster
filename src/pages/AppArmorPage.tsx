@@ -1,7 +1,5 @@
 import { useAppArmor } from "../hooks/useAppArmor";
 import { AppArmorDashboard } from "../components/apparmor/AppArmorDashboard";
-import { ToastContainer } from "../components/ui/Toast";
-
 export function AppArmorPage() {
   const appArmor = useAppArmor();
 
@@ -16,7 +14,6 @@ export function AppArmorPage() {
         </p>
       </div>
       <AppArmorDashboard {...appArmor} />
-      <ToastContainer />
     </div>
   );
 }
