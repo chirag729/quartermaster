@@ -11,7 +11,8 @@ use crate::executor::local::LocalExecutor;
 use crate::executor::ssh::SshExecutor;
 use crate::fleet::NodeKind;
 use crate::state::AppState;
-use crate::tasks::TaskStatus;
+use crate::tasks::{ExecutionTarget, TaskStatus};
+use crate::tasks::install_state;
 
 fn bump_version(current: &str, bump_type: &str) -> String {
     let parts: Vec<u32> = current
@@ -324,19 +325,46 @@ pub async fn apply_blueprint(
             let ssh_config = node.ssh_config.as_ref().ok_or_else(|| {
                 AppError::Ssh(format!("Remote node '{}' has no SSH configuration", node.name))
             })?;
-            Box::new(SshExecutor::new(
-                ssh_config.host.clone(),
-                ssh_config.port,
-                ssh_config.username.clone(),
-            ))
+            let vault_password: Option<String> = match &ssh_config.auth_method {
+                crate::fleet::SshAuthMethod::Password { vault_key } => {
+                    if let Some(key) = vault_key {
+                        let vault = state.vault.lock().await;
+                        vault.get(key)?
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+            Box::new(SshExecutor::from_ssh_config(ssh_config, vault_password.as_deref()))
         }
     };
 
     for (i, entry) in entries.iter().enumerate() {
         let task = match state.registry.get(&entry.task_id) {
             Some(t) => t,
-            None => continue,
+            None => {
+                let _ = app.emit("blueprint-task-warning", serde_json::json!({
+                    "blueprint_id": blueprint_id,
+                    "task_id": entry.task_id,
+                    "warning": format!("Unknown task '{}' was skipped", entry.task_id),
+                }));
+                continue;
+            }
         };
+
+        // Enforce execution target constraints
+        match (task.execution_target(), &node.kind) {
+            (ExecutionTarget::LocalOnly, NodeKind::Remote) | (ExecutionTarget::RemoteOnly, NodeKind::Local) => {
+                let _ = app.emit("blueprint-task-warning", serde_json::json!({
+                    "blueprint_id": blueprint_id,
+                    "task_id": entry.task_id,
+                    "warning": format!("Task '{}' skipped: incompatible execution target", entry.task_id),
+                }));
+                continue;
+            }
+            _ => {}
+        }
 
         // Merge config: base task config + blueprint overrides
         let config = state.config.lock().await;
@@ -388,6 +416,21 @@ pub async fn apply_blueprint(
             });
 
         task.execute(&task_config, exec.as_ref(), &progress_cb).await?;
+
+        // Record installation state for this task
+        {
+            let install_record = install_state::record_installation(
+                &entry.task_id,
+                &node_id,
+                task.version().as_deref(),
+                Some(&blueprint_id),
+                &task_config,
+            );
+            let key = install_state::state_key(&entry.task_id, &node_id);
+            let mut config = state.config.lock().await;
+            config.data.installed_tasks.insert(key, install_record);
+            let _ = config.save();
+        }
 
         let _ = app.emit(
             "task-state-changed",
@@ -477,11 +520,18 @@ pub async fn dry_run_blueprint(
             let ssh_config = node.ssh_config.as_ref().ok_or_else(|| {
                 AppError::Ssh(format!("Remote node '{}' has no SSH configuration", node.name))
             })?;
-            Box::new(SshExecutor::new(
-                ssh_config.host.clone(),
-                ssh_config.port,
-                ssh_config.username.clone(),
-            ))
+            let vault_password: Option<String> = match &ssh_config.auth_method {
+                crate::fleet::SshAuthMethod::Password { vault_key } => {
+                    if let Some(key) = vault_key {
+                        let vault = state.vault.lock().await;
+                        vault.get(key)?
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+            Box::new(SshExecutor::from_ssh_config(ssh_config, vault_password.as_deref()))
         }
     };
 
@@ -493,8 +543,30 @@ pub async fn dry_run_blueprint(
     for entry in &entries {
         let task = match state.registry.get(&entry.task_id) {
             Some(t) => t,
-            None => continue,
+            None => {
+                task_actions.push(DryRunTaskResult {
+                    task_id: entry.task_id.clone(),
+                    task_name: entry.task_id.clone(),
+                    status: "skipped".to_string(),
+                    actions: vec![],
+                });
+                continue;
+            }
         };
+
+        // Enforce execution target constraints
+        match (task.execution_target(), &node.kind) {
+            (ExecutionTarget::LocalOnly, NodeKind::Remote) | (ExecutionTarget::RemoteOnly, NodeKind::Local) => {
+                task_actions.push(DryRunTaskResult {
+                    task_id: entry.task_id.clone(),
+                    task_name: task.name().to_string(),
+                    status: "skipped".to_string(),
+                    actions: vec![],
+                });
+                continue;
+            }
+            _ => {}
+        }
 
         // Merge config: base task config + blueprint overrides
         let config = state.config.lock().await;
@@ -627,11 +699,20 @@ pub async fn apply_blueprint_bulk(
             NodeKind::Local => Box::new(LocalExecutor::new()),
             NodeKind::Remote => {
                 match node.ssh_config.as_ref() {
-                    Some(ssh_config) => Box::new(SshExecutor::new(
-                        ssh_config.host.clone(),
-                        ssh_config.port,
-                        ssh_config.username.clone(),
-                    )),
+                    Some(ssh_config) => {
+                        let vault_password: Option<String> = match &ssh_config.auth_method {
+                            crate::fleet::SshAuthMethod::Password { vault_key } => {
+                                if let Some(key) = vault_key {
+                                    let vault = state.vault.lock().await;
+                                    vault.get(key)?
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None,
+                        };
+                        Box::new(SshExecutor::from_ssh_config(ssh_config, vault_password.as_deref()))
+                    }
                     None => {
                         results.push(BulkApplyResult {
                             node_id: node_id.clone(),
@@ -653,8 +734,28 @@ pub async fn apply_blueprint_bulk(
         for entry in &entries {
             let task = match state.registry.get(&entry.task_id) {
                 Some(t) => t,
-                None => continue,
+                None => {
+                    let _ = app.emit("blueprint-task-warning", serde_json::json!({
+                        "blueprint_id": blueprint_id,
+                        "task_id": entry.task_id,
+                        "warning": format!("Unknown task '{}' was skipped", entry.task_id),
+                    }));
+                    continue;
+                }
             };
+
+            // Enforce execution target constraints
+            match (task.execution_target(), &node.kind) {
+                (ExecutionTarget::LocalOnly, NodeKind::Remote) | (ExecutionTarget::RemoteOnly, NodeKind::Local) => {
+                    let _ = app.emit("blueprint-task-warning", serde_json::json!({
+                        "blueprint_id": blueprint_id,
+                        "task_id": entry.task_id,
+                        "warning": format!("Task '{}' skipped: incompatible execution target", entry.task_id),
+                    }));
+                    continue;
+                }
+                _ => {}
+            }
 
             // Merge config: base task config + blueprint overrides
             let config = state.config.lock().await;
@@ -695,6 +796,21 @@ pub async fn apply_blueprint_bulk(
 
             match task.execute(&task_config, exec.as_ref(), &progress_cb).await {
                 Ok(_) => {
+                    // Record installation state for this task
+                    {
+                        let install_record = install_state::record_installation(
+                            &entry.task_id,
+                            node_id,
+                            task.version().as_deref(),
+                            Some(&blueprint_id),
+                            &task_config,
+                        );
+                        let key = install_state::state_key(&entry.task_id, node_id);
+                        let mut config = state.config.lock().await;
+                        config.data.installed_tasks.insert(key, install_record);
+                        let _ = config.save();
+                    }
+
                     let _ = app.emit(
                         "task-state-changed",
                         serde_json::json!({

@@ -103,17 +103,16 @@ impl Default for ConfigManager {
 
 impl ConfigManager {
     fn config_path() -> PathBuf {
-        let config_dir = dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("~/.config"))
-            .join("quartermaster");
-        config_dir.join("config.json")
+        crate::dirs::config_dir().join("config.json")
     }
 
     fn legacy_config_path() -> PathBuf {
-        let config_dir = dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("~/.config"))
-            .join("machine-setup");
-        config_dir.join("config.json")
+        let base = dirs::config_dir().unwrap_or_else(|| {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("/tmp"))
+                .join(".config")
+        });
+        base.join("machine-setup").join("config.json")
     }
 
     pub fn load() -> Result<Self, AppError> {

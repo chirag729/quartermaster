@@ -98,8 +98,7 @@ impl ProfileTemplateManager {
     }
 
     fn user_profiles_dir() -> PathBuf {
-        let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("~/.config"));
-        base.join("quartermaster").join("profiles")
+        crate::dirs::config_dir().join("profiles")
     }
 
     pub fn get(&self, id: &str) -> Option<&ProfileTemplate> {

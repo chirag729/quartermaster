@@ -11,7 +11,9 @@ impl LocalExecutor {
     pub fn new() -> Self {
         let home = dirs::home_dir()
             .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| "/root".to_string());
+            .unwrap_or_else(|| {
+                std::env::var("HOME").unwrap_or_else(|_| "/root".to_string())
+            });
         Self { home }
     }
 }

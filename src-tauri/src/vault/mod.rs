@@ -65,10 +65,7 @@ impl Vault {
     }
 
     fn vault_path() -> PathBuf {
-        let config_dir = dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("~/.config"))
-            .join("quartermaster");
-        config_dir.join("vault.enc")
+        crate::dirs::vault_path()
     }
 
     /// Returns `true` if the vault file exists on disk.

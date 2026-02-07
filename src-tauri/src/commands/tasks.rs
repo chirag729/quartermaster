@@ -67,21 +67,32 @@ pub async fn list_tasks_for_node(
     // Determine executor for this node
     let exec: Box<dyn CommandExecutor> = {
         let fleet_manager = state.fleet_manager.lock().await;
-        if let Some(node) = fleet_manager.get_node(&node_id) {
-            match node.kind {
-                NodeKind::Local => Box::new(LocalExecutor::new()),
-                NodeKind::Remote => {
-                    let ssh_config = node.ssh_config.as_ref().ok_or_else(|| {
-                        AppError::Ssh(format!(
-                            "Remote node '{}' has no SSH configuration",
-                            node.name
-                        ))
-                    })?;
-                    Box::new(SshExecutor::from_ssh_config(ssh_config, None))
-                }
+        let node = fleet_manager.get_node(&node_id).cloned().ok_or_else(|| {
+            AppError::Fleet(format!("Node not found: {}", node_id))
+        })?;
+        drop(fleet_manager);
+        match node.kind {
+            NodeKind::Local => Box::new(LocalExecutor::new()),
+            NodeKind::Remote => {
+                let ssh_config = node.ssh_config.as_ref().ok_or_else(|| {
+                    AppError::Ssh(format!(
+                        "Remote node '{}' has no SSH configuration",
+                        node.name
+                    ))
+                })?;
+                let vault_password: Option<String> = match &ssh_config.auth_method {
+                    crate::fleet::SshAuthMethod::Password { vault_key } => {
+                        if let Some(key) = vault_key {
+                            let vault = state.vault.lock().await;
+                            vault.get(key)?
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+                Box::new(SshExecutor::from_ssh_config(ssh_config, vault_password.as_deref()))
             }
-        } else {
-            Box::new(LocalExecutor::new())
         }
     };
 
@@ -163,7 +174,7 @@ pub async fn execute_task(
                     crate::fleet::SshAuthMethod::Password { vault_key } => {
                         if let Some(key) = vault_key {
                             let vault = state.vault.lock().await;
-                            vault.get(key).ok().flatten()
+                            vault.get(key)?
                         } else {
                             None
                         }
@@ -276,7 +287,7 @@ pub async fn uninstall_task(
                     crate::fleet::SshAuthMethod::Password { vault_key } => {
                         if let Some(key) = vault_key {
                             let vault = state.vault.lock().await;
-                            vault.get(key).ok().flatten()
+                            vault.get(key)?
                         } else {
                             None
                         }
@@ -389,7 +400,18 @@ pub async fn check_task_updates(
                 let ssh = node.ssh_config.as_ref().ok_or_else(|| {
                     AppError::Ssh(format!("No SSH config for node '{}'", node.name))
                 })?;
-                Box::new(SshExecutor::from_ssh_config(ssh, None))
+                let vault_password: Option<String> = match &ssh.auth_method {
+                    crate::fleet::SshAuthMethod::Password { vault_key } => {
+                        if let Some(key) = vault_key {
+                            let vault = state.vault.lock().await;
+                            vault.get(key)?
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+                Box::new(SshExecutor::from_ssh_config(ssh, vault_password.as_deref()))
             }
         }
     } else {

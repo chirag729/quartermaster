@@ -28,6 +28,7 @@ import { Tabs } from "../components/ui/Tabs";
 import { ToastContainer } from "../components/ui/Toast";
 import * as api from "../services/tauriCommands";
 import { formatError } from "../lib/formatError";
+import { useTauriEvent } from "../hooks/useTauriEvent";
 import type { Node } from "../types/node";
 import type { Blueprint } from "../types/blueprint";
 import type { TaskStateInfo, TaskInfo } from "../types/task";
@@ -60,6 +61,27 @@ export function NodeDetailPage() {
   const [showPreRun, setShowPreRun] = useState(false);
   const [applyingBlueprint, setApplyingBlueprint] = useState(false);
   const [allTasks, setAllTasks] = useState<TaskInfo[]>([]);
+  const [applyProgress, setApplyProgress] = useState<string | null>(null);
+
+  // ── Blueprint apply event listeners ─────────────────────────────────
+
+  useTauriEvent<{ warning: string }>("blueprint-task-warning", (payload) => {
+    addToast({ type: "warning", title: "Task skipped", message: payload.warning });
+  });
+
+  useTauriEvent<{ task_id: string; progress: number; message: string }>(
+    "blueprint-apply-progress",
+    (payload) => {
+      setApplyProgress(payload.message);
+    },
+  );
+
+  useTauriEvent<{ blueprint_id: string; node_id: string }>(
+    "blueprint-apply-complete",
+    () => {
+      setApplyProgress(null);
+    },
+  );
 
   // ── Load node ──────────────────────────────────────────────────────
 
@@ -703,6 +725,7 @@ export function NodeDetailPage() {
         blueprint={blueprint}
         tasks={allTasks}
         loading={applyingBlueprint}
+        loadingMessage={applyProgress ?? undefined}
         nodeId={nodeId}
       />
       <ToastContainer />

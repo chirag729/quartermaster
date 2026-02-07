@@ -264,7 +264,7 @@ export async function vaultSet(key: string, value: string): Promise<void> {
   return invoke("vault_set", { key, value });
 }
 
-export async function vaultRemove(key: string): Promise<void> {
+export async function vaultRemove(key: string): Promise<boolean> {
   return invoke("vault_remove", { key });
 }
 

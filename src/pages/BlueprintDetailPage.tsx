@@ -123,6 +123,20 @@ export function BlueprintDetailPage() {
     }
   };
 
+  const handleToggleTask = async (taskId: string, currentEnabled: boolean) => {
+    if (!blueprint) return;
+    const updated = { ...blueprint };
+    updated.task_entries = updated.task_entries.map((e) =>
+      e.task_id === taskId ? { ...e, enabled: !currentEnabled } : e,
+    );
+    try {
+      const result = await api.updateBlueprint(updated);
+      setBlueprint(result);
+    } catch (err) {
+      addToast({ type: "error", title: "Toggle failed", message: formatError(err) });
+    }
+  };
+
   const handleConfigSave = async (taskId: string, overrides: Record<string, unknown>) => {
     if (!blueprint) return;
     const updated = { ...blueprint };
@@ -265,7 +279,7 @@ export function BlueprintDetailPage() {
                         {taskInfo?.privilege_level === "admin" && <Badge variant="warning">Admin</Badge>}
                         <Toggle
                           checked={entry.enabled}
-                          onChange={() => {}}
+                          onChange={() => handleToggleTask(entry.task_id, entry.enabled)}
                           disabled={blueprint.is_builtin}
                         />
                       </div>

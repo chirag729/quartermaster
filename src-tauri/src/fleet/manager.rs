@@ -16,9 +16,8 @@ impl FleetManager {
     /// If no local node exists, auto-creates one representing this machine.
     /// Migrates from legacy ~/.config/machine-setup/nodes/ if the new path is empty.
     pub fn load() -> Result<Self, AppError> {
-        let base_dir = dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("~/.config"));
-        let config_dir = base_dir.join("quartermaster").join("nodes");
+        let base_dir = crate::dirs::config_dir();
+        let config_dir = base_dir.join("nodes");
 
         std::fs::create_dir_all(&config_dir)?;
 
@@ -31,7 +30,12 @@ impl FleetManager {
 
         // Migrate from legacy path if new directory is empty
         if manager.nodes.is_empty() {
-            let legacy_dir = base_dir.join("machine-setup").join("nodes");
+            let legacy_base = dirs::config_dir().unwrap_or_else(|| {
+                dirs::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("/tmp"))
+                    .join(".config")
+            });
+            let legacy_dir = legacy_base.join("machine-setup").join("nodes");
             if legacy_dir.exists() {
                 if let Ok(entries) = std::fs::read_dir(&legacy_dir) {
                     for entry in entries.flatten() {

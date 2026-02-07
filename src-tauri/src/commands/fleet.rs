@@ -53,6 +53,17 @@ pub async fn add_node(
     };
 
     let mut manager = state.fleet_manager.lock().await;
+
+    // Enforce: only one local node is allowed
+    if kind == NodeKind::Local {
+        let has_local = manager.list_nodes().iter().any(|n| n.kind == NodeKind::Local);
+        if has_local {
+            return Err(AppError::Fleet(
+                "A local node already exists. Only one local node is allowed.".to_string(),
+            ));
+        }
+    }
+
     manager.add_node(node.clone())?;
     drop(manager);
 

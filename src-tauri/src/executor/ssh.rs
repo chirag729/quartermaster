@@ -1,8 +1,14 @@
+use std::time::Duration;
+
 use async_trait::async_trait;
+use tokio::time::timeout;
 
 use crate::error::AppError;
 use crate::fleet::{SshAuthMethod, SshConfig};
 use super::{CommandExecutor, CommandOutput};
+
+/// Default timeout for SSH command execution (5 minutes).
+const SSH_COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// How the SSH connection should authenticate.
 #[derive(Debug, Clone)]
@@ -149,10 +155,14 @@ impl CommandExecutor for SshExecutor {
             format!("{} {}", cmd, escaped_args.join(" "))
         };
 
-        let output = self.ssh_command()
+        let output = timeout(SSH_COMMAND_TIMEOUT, self.ssh_command()
             .arg(&remote_cmd)
-            .output()
+            .output())
             .await
+            .map_err(|_| AppError::Ssh(format!(
+                "SSH command timed out after {}s for {}@{}:{}",
+                SSH_COMMAND_TIMEOUT.as_secs(), self.username, self.host, self.port
+            )))?
             .map_err(|e| AppError::Ssh(format!(
                 "SSH command failed for {}@{}:{}: {}",
                 self.username, self.host, self.port, e

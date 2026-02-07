@@ -16,6 +16,7 @@ interface PreRunConfigDialogProps {
   blueprint: Blueprint | null;
   tasks: TaskInfo[];
   loading?: boolean;
+  loadingMessage?: string;
   nodeId?: string;
 }
 
@@ -26,6 +27,7 @@ export function PreRunConfigDialog({
   blueprint,
   tasks,
   loading,
+  loadingMessage,
   nodeId,
 }: PreRunConfigDialogProps) {
   const [dryRunResult, setDryRunResult] = useState<DryRunResult | null>(null);
@@ -147,6 +149,13 @@ export function PreRunConfigDialog({
               No enabled tasks in this blueprint.
             </p>
           )}
+        </div>
+      )}
+
+      {/* Loading message */}
+      {loading && loadingMessage && (
+        <div className="mb-3 text-xs text-text-secondary-light dark:text-text-secondary-dark animate-pulse">
+          {loadingMessage}
         </div>
       )}
 

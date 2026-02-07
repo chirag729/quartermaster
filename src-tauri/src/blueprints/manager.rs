@@ -18,9 +18,8 @@ impl BlueprintManager {
     /// Creates a new BlueprintManager, loading existing blueprints from disk.
     /// If no blueprints exist on disk, migrates from legacy path or creates defaults.
     pub fn load() -> Result<Self, AppError> {
-        let base_dir = dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("~/.config"));
-        let config_dir = base_dir.join("quartermaster").join("blueprints");
+        let base_dir = crate::dirs::config_dir();
+        let config_dir = base_dir.join("blueprints");
 
         std::fs::create_dir_all(&config_dir)?;
 
@@ -33,7 +32,12 @@ impl BlueprintManager {
 
         // Migrate from legacy JSON path if directory is empty
         if manager.blueprints.is_empty() {
-            let legacy_dir = base_dir.join("machine-setup").join("blueprints");
+            let legacy_base = dirs::config_dir().unwrap_or_else(|| {
+                dirs::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("/tmp"))
+                    .join(".config")
+            });
+            let legacy_dir = legacy_base.join("machine-setup").join("blueprints");
             if legacy_dir.exists() {
                 if let Ok(entries) = std::fs::read_dir(&legacy_dir) {
                     for entry in entries.flatten() {
@@ -263,26 +267,45 @@ impl BlueprintManager {
     /// Resolves a blueprint's full task list by merging parent entries.
     /// Child entries override parent entries with the same task_id.
     /// Returns the merged entries sorted by order.
+    ///
+    /// Detects circular inheritance by tracking visited blueprint IDs.
     pub fn resolve_task_entries(&self, blueprint_id: &str) -> Result<Vec<BlueprintTaskEntry>, AppError> {
-        let bp = self.get_blueprint(blueprint_id)
-            .ok_or_else(|| AppError::Blueprint(format!("Blueprint not found: {}", blueprint_id)))?;
-
         let mut entries = Vec::new();
+        let mut visited = std::collections::HashSet::new();
+        let mut current_id = blueprint_id.to_string();
 
-        // If this blueprint extends a parent, get parent entries first
-        if let Some(ref parent_id) = bp.extends {
-            // Prevent circular inheritance (only 1 level deep for now)
-            let parent = self.get_blueprint(parent_id)
-                .ok_or_else(|| AppError::Blueprint(format!("Parent blueprint not found: {}", parent_id)))?;
-            entries.extend(parent.task_entries.clone());
+        // Walk the inheritance chain collecting parent entries (deepest ancestor first)
+        let mut chain_entries: Vec<Vec<BlueprintTaskEntry>> = Vec::new();
+
+        loop {
+            if !visited.insert(current_id.clone()) {
+                return Err(AppError::Blueprint(format!(
+                    "Circular blueprint inheritance detected involving '{}'",
+                    current_id
+                )));
+            }
+
+            let bp = self.get_blueprint(&current_id)
+                .ok_or_else(|| AppError::Blueprint(format!("Blueprint not found: {}", current_id)))?;
+
+            chain_entries.push(bp.task_entries.clone());
+
+            match bp.extends {
+                Some(ref parent_id) => {
+                    current_id = parent_id.clone();
+                }
+                None => break,
+            }
         }
 
-        // Merge child entries: override matching task_ids, append new ones
-        for child_entry in &bp.task_entries {
-            if let Some(existing) = entries.iter_mut().find(|e| e.task_id == child_entry.task_id) {
-                *existing = child_entry.clone();
-            } else {
-                entries.push(child_entry.clone());
+        // Merge from deepest ancestor to the target blueprint (last entry is the deepest)
+        for layer in chain_entries.into_iter().rev() {
+            for entry in layer {
+                if let Some(existing) = entries.iter_mut().find(|e: &&mut BlueprintTaskEntry| e.task_id == entry.task_id) {
+                    *existing = entry;
+                } else {
+                    entries.push(entry);
+                }
             }
         }
 

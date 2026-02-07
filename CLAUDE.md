@@ -20,25 +20,65 @@ cd src-tauri && cargo test  # Run Rust unit tests
 - **Frontend**: `src/` - React 18, TypeScript, Tailwind CSS 4, Zustand 5, React Router 7 (HashRouter)
 - **Backend**: `src-tauri/src/` - Rust, Tauri 2, Tokio async runtime, russh 0.46 (SSH)
 - **IPC**: Frontend calls backend via `invoke()` (`@tauri-apps/api/core`); backend emits events via `app.emit()`
-- **State**: Zustand stores (frontend), `Arc<Mutex<T>>` managed state (backend)
+- **State**: Zustand stores (frontend), `Arc<Mutex<T>>` managed state in `AppState` (backend)
+- **Security**: PolicyKit for privilege escalation, encrypted vault (Argon2id + AES-256-GCM), AppArmor profile management, FIDO2/YubiKey SSH support
 
 ## Key Directories
 
 | Path | Contains |
 |------|----------|
-| `src/components/` | React components organized by feature (apparmor/, blueprints/, dashboard/, fleet/, layout/, modules/, ssh/, ui/) |
+| `src/components/` | React components by feature (apparmor/, blueprints/, dashboard/, fleet/, layout/, modules/, ssh/, ui/) |
+| `src/pages/` | 8 page components: Dashboard, Fleet, NodeDetail, Blueprints, BlueprintDetail, AppArmor, TaskLibrary, Settings |
 | `src/stores/` | Zustand stores: taskStore, fleetStore, blueprintStore, appArmorStore, themeStore, toastStore |
-| `src/hooks/` | Custom hooks: useTasks, useAppArmor, useTauriEvent, useTheme |
-| `src/services/tauriCommands.ts` | All Tauri IPC invoke wrappers |
+| `src/hooks/` | Custom hooks: useTasks, useAppArmor, useTauriEvent, useTheme, useDebounce |
+| `src/services/tauriCommands.ts` | All Tauri IPC invoke wrappers (typed) |
 | `src/types/` | TypeScript type definitions (task, node, blueprint, apparmor, config, events) |
-| `src-tauri/src/commands/` | Tauri command handlers (tasks, fleet, blueprints, ssh, apparmor, config, system) |
-| `src-tauri/src/tasks/` | SetupTask trait + task implementations (create_folder, flutter_sdk, android_sdk, intellij, claude_code, git_ssh) |
-| `src-tauri/src/executor/` | CommandExecutor trait, LocalExecutor, SshExecutor |
-| `src-tauri/src/fleet/` | Node model + FleetManager |
-| `src-tauri/src/blueprints/` | Blueprint model, manager, defaults |
-| `src-tauri/src/apparmor/` | Log parsing, rule generation, profile management, real-time monitoring |
+| `src-tauri/src/commands/` | Tauri command handlers (tasks, fleet, blueprints, ssh, apparmor, config, system, variables, vault, yubikey, activity) |
+| `src-tauri/src/tasks/` | SetupTask trait, ScriptTask (YAML-based), TaskRegistry with dependency resolution |
+| `src-tauri/src/executor/` | CommandExecutor trait: LocalExecutor, SshExecutor, DryRunExecutor |
+| `src-tauri/src/fleet/` | Node model, FleetManager, SSH config parser, status poller, terminal launcher |
+| `src-tauri/src/blueprints/` | Blueprint model, manager, validation, YAML schema, `.qmbp` packaging |
+| `src-tauri/src/apparmor/` | Log parsing, rule generation/consolidation, profile management, real-time monitoring, templates, tunable installer |
+| `src-tauri/src/vault/` | Encrypted credential vault (Argon2id KDF, AES-256-GCM) |
+| `src-tauri/src/variables/` | Variable resolution with 4-layer precedence (task defaults → blueprint → user → node overrides) |
 | `src-tauri/src/polkit/` | PolicyKit authorization and privilege escalation |
 | `src-tauri/src/config/` | ConfigManager - persistent config at ~/.config/quartermaster/ |
+| `docs/AppArmor Profiles/` | AppArmor profiles (intellij, claude-code, codex-cli, flutter) + shared abstractions/ |
+
+## Key Features
+
+### Blueprint System
+- **YAML-defined blueprints** with ordered task entries and config overrides
+- **Inheritance**: Blueprints can `extends` a parent; `resolve_task_entries()` merges parent + child
+- **Versioning**: Auto-bumps semver (minor for task changes, patch for config changes)
+- **Import/Export**: `.qmbp` zip archive format via `package.rs`
+- **Dry-run**: `DryRunExecutor` intercepts mutations, previews changes without execution
+- **Bulk apply**: Apply blueprints to multiple nodes with per-node progress events
+
+### Task System
+- **SetupTask trait**: `detect_state()`, `execute()`, `uninstall()`, `detect_installed_version()`
+- **ScriptTask**: YAML-defined tasks with `steps`, `uninstall` steps, `version_detect` command
+- **Registry**: Dependency resolution with topological sort (Kahn's algorithm)
+- **Execution logging**: Per-step stdout/stderr capture in `~/.local/state/quartermaster/logs/`
+- **Auto-update detection**: Compares defined vs installed versions across all tasks
+
+### Fleet Management
+- **Local + Remote nodes**: SSH execution with multiple auth methods (password, key file, certificate, FIDO2 resident, agent)
+- **SSH config discovery**: Parses `~/.ssh/config` for host import
+- **Status polling**: 30-second background TCP connectivity probes
+- **Terminal integration**: Detects and launches 8 terminal emulators with SSH args
+
+### Security
+- **Encrypted vault**: Master-password-protected storage for SSH passwords and API keys
+- **YubiKey/FIDO2**: Hardware key detection, resident credential management, `ed25519-sk` key generation
+- **AppArmor**: Denial log monitoring, rule suggestion/consolidation, profile templates, tunable installation
+- **PolicyKit**: All privileged operations use `pkexec`, never direct root
+
+### Desktop Integration
+- **Notifications**: `tauri-plugin-notification` for blueprint apply/bulk completion
+- **Activity log**: 500-entry log at `~/.config/quartermaster/activity_log.json`
+- **Collapsible sidebar**: Persistent collapsed state in localStorage, tooltip navigation
+- **Command palette**: Keyboard-driven navigation (Cmd+K)
 
 ## Conventions
 
@@ -49,6 +89,7 @@ cd src-tauri && cargo test  # Run Rust unit tests
 - All privileged operations use PolicyKit (`pkexec`), never direct root
 - Long-running backend operations emit progress events; frontend subscribes via `useTauriEvent` hook
 - Errors flow as serialized `AppError` variants from Rust to frontend, displayed as toasts
+- New optional struct fields use `#[serde(default)]` for backward-compatible deserialization
 - Dark mode uses CSS custom properties + `dark` class on `<html>`
 - Path alias: `@/*` maps to `./src/*`
 
@@ -59,16 +100,30 @@ cd src-tauri && cargo test  # Run Rust unit tests
 3. Register it in `create_registry()` in `src-tauri/src/tasks/registry.rs`
 4. The frontend picks it up automatically via `list_tasks` / `detect_all_states`
 
+Alternatively, create a YAML task definition in `~/.config/quartermaster/tasks/` — `ScriptTask` will load it automatically.
+
+## Adding a New Tauri Command
+
+1. Add the `#[tauri::command]` function in the appropriate `src-tauri/src/commands/*.rs` module
+2. Register it in the `invoke_handler` in `src-tauri/src/lib.rs`
+3. Add the typed IPC wrapper in `src/services/tauriCommands.ts`
+
 ## Testing
 
-- **Frontend mocks**: Tauri APIs are mocked in `src/__mocks__/` (invoke, events, matchMedia)
-- **Frontend tests**: Store tests in `src/__tests__/stores/`; run with `npm run test` (16 tests)
-- **Backend tests**: Inline `#[test]` functions; uses `tempfile` crate for filesystem isolation (59 tests)
+- **Frontend tests**: 82 tests across 6 store test files; run with `npm run test`
+- **Frontend mocks**: Tauri APIs mocked in `src/__mocks__/` (invoke, events, matchMedia)
+- **Backend tests**: 299 inline `#[test]` functions; uses `tempfile` crate for filesystem isolation
+- **Test helpers**: `make_blueprint()` in manager.rs, `minimal_valid_blueprint()` in validate.rs, `minimal_valid_task()` in tasks/validate.rs, `mockTask` in moduleStore.test.ts, `makeBlueprint` in blueprintStore.test.ts
+
+When adding fields to shared structs (Blueprint, TaskInfo, Node), update ALL constructors including test helpers.
 
 ## Config
 
 - Tauri config: `src-tauri/tauri.conf.json`
+- Tauri capabilities: `src-tauri/capabilities/default.json` (permissions for shell, notification, etc.)
 - Vite config: `vite.config.ts` (dev port 1420, path aliases)
 - TypeScript: `tsconfig.json` (strict, ES2020 target)
 - Vitest: `vitest.config.ts` (jsdom environment, setup file at `src/__tests__/setup.ts`)
-- App data: `~/.config/quartermaster/` (config.json, nodes/, blueprints/)
+- App data: `~/.config/quartermaster/` (config.json, nodes/, blueprints/, tasks/, vault.enc, activity_log.json)
+- App state: `~/.local/state/quartermaster/logs/` (execution logs)
+- App cache: `~/.cache/quartermaster/downloads/` (downloaded files)

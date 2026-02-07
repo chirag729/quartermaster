@@ -60,6 +60,28 @@ pub struct DesktopEntrySpec {
     pub startup_wm_class: Option<String>,
 }
 
+/// Escape a value for use in the Exec field of a .desktop file.
+///
+/// Per the freedesktop.org Desktop Entry Specification, special characters
+/// (`, $, \, ") in the Exec value must be escaped with a backslash, and
+/// newlines/tabs are not allowed.
+fn escape_exec_value(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    for ch in s.chars() {
+        match ch {
+            '`' | '$' | '\\' | '"' => {
+                out.push('\\');
+                out.push(ch);
+            }
+            '\n' | '\r' | '\t' => {
+                // Strip control characters — they are invalid in Exec fields
+            }
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 /// Generates a `.desktop` file content string following the freedesktop.org spec.
 pub fn generate_desktop_entry(spec: &DesktopEntrySpec) -> String {
     let mut lines = Vec::new();
@@ -67,7 +89,7 @@ pub fn generate_desktop_entry(spec: &DesktopEntrySpec) -> String {
     lines.push("Type=Application".to_string());
     lines.push("Version=1.5".to_string());
     lines.push(format!("Name={}", spec.name));
-    lines.push(format!("Exec={}", spec.exec));
+    lines.push(format!("Exec={}", escape_exec_value(&spec.exec)));
     lines.push(format!("Icon={}", spec.icon));
     lines.push(format!("Terminal={}", if spec.terminal { "true" } else { "false" }));
 
