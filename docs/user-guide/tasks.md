@@ -62,19 +62,20 @@ Downloads Android command-line tools for Android development.
 
 ### intellij-idea
 
-Installs IntelliJ IDEA via snap.
+Downloads and installs IntelliJ IDEA Community Edition from the JetBrains tarball.
 
 | Property | Value |
 |----------|-------|
-| Privilege | Admin |
+| Privilege | User |
 | Execution Target | LocalOnly |
-| Tags | -- |
+| Tags | `ide`, `java` |
 
 Configuration:
 
 | Key | Label | Type | Default | Options |
 |-----|-------|------|---------|---------|
-| `edition` | IntelliJ Edition | Select | `community` | `community`, `ultimate` |
+| `edition` | Edition | Select | `community` | `community`, `ultimate` |
+| `install_path` | Installation path | Path | `~/.local/share/JetBrains/IntelliJIdea` | -- |
 
 ### claude-code
 

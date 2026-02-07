@@ -117,6 +117,31 @@ Alternatively, create a YAML task definition in `~/.config/quartermaster/tasks/`
 
 When adding fields to shared structs (Blueprint, TaskInfo, Node), update ALL constructors including test helpers.
 
+## Code Review
+
+Follow the review guidelines in [`docs/code-review-guidelines.md`](docs/code-review-guidelines.md). Key points:
+
+- **Run all 6 strategies**, not just one. Single-pass reviews miss cross-cutting bugs.
+- **Contract tracing is mandatory**: For every constraint type/enum, verify enforcement at every call site — not just that the type exists.
+- **Cross-boundary payload verification**: Every `app.emit()` payload must be checked field-by-field against the frontend listener's type parameter and the definition in `src/types/events.ts`.
+- **Error propagation audit**: Every `let _ =` on a `Result` must be justified. Config saves, vault operations, and state mutations must not swallow errors.
+- **Existence is not enforcement**: Seeing `ExecutionTarget::LocalOnly` declared on a task does NOT mean `execute_task` checks it. Trace the call path.
+- **Fix ALL call sites**: When fixing a contract violation, grep for every call site. `task.execute()` is called from `execute_task`, `apply_blueprint`, and `apply_blueprint_bulk` — fixing only one is incomplete.
+- **Verify fixes landed**: After editing, re-read the changed lines to confirm edits are on disk. Follow the Fix Verification Protocol in the guidelines doc.
+- **Never dismiss cited files as non-existent without reading them**: If a reviewer cites `docs/user-guide/tasks.md:127`, use `Read` on that path. Do not use `Glob` — it is unreliable in this workspace.
+
+## Documentation
+
+User-facing documentation lives in `docs/user-guide/` and must stay in sync with the implementation:
+
+- `tasks.md` — task catalog with privilege/target/config details per task
+- `blueprints.md` — blueprint authoring, task entries, assignment workflow
+- `fleet-management.md`, `ssh-setup.md`, `apparmor.md`, `settings.md`, `getting-started.md`
+
+Developer documentation lives in `docs/development/`.
+
+When changing task behavior (privilege level, config schema, installation method), update `docs/user-guide/tasks.md` to match.
+
 ## Config
 
 - Tauri config: `src-tauri/tauri.conf.json`

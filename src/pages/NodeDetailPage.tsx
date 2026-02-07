@@ -69,17 +69,21 @@ export function NodeDetailPage() {
     addToast({ type: "warning", title: "Task skipped", message: payload.warning });
   });
 
-  useTauriEvent<{ task_id: string; progress: number; message: string }>(
+  useTauriEvent<{ node_id: string; blueprint_id: string; completed: number; total: number; current_task_id: string }>(
     "blueprint-apply-progress",
     (payload) => {
-      setApplyProgress(payload.message);
+      if (payload.node_id === nodeId) {
+        setApplyProgress(`Running task ${payload.completed + 1} of ${payload.total}`);
+      }
     },
   );
 
   useTauriEvent<{ blueprint_id: string; node_id: string }>(
     "blueprint-apply-complete",
-    () => {
-      setApplyProgress(null);
+    (payload) => {
+      if (payload.node_id === nodeId) {
+        setApplyProgress(null);
+      }
     },
   );
 

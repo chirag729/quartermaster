@@ -11,7 +11,7 @@ use crate::executor::local::LocalExecutor;
 use crate::executor::ssh::SshExecutor;
 use crate::fleet::NodeKind;
 use crate::state::AppState;
-use crate::tasks::{ExecutionTarget, TaskStatus};
+use crate::tasks::{ExecutionTarget, PrivilegeLevel, TaskStatus};
 use crate::tasks::install_state;
 
 fn bump_version(current: &str, bump_type: &str) -> String {
@@ -366,6 +366,18 @@ pub async fn apply_blueprint(
             _ => {}
         }
 
+        // Enforce privilege level constraints for local execution
+        if task.privilege_level() == PrivilegeLevel::Admin && node.kind == NodeKind::Local {
+            if !crate::polkit::auth::is_policy_installed() {
+                let _ = app.emit("blueprint-task-warning", serde_json::json!({
+                    "blueprint_id": blueprint_id,
+                    "task_id": entry.task_id,
+                    "warning": format!("Task '{}' skipped: requires admin privileges but PolicyKit policy is not installed", entry.task_id),
+                }));
+                continue;
+            }
+        }
+
         // Merge config: base task config + blueprint overrides
         let config = state.config.lock().await;
         let mut task_config: HashMap<String, serde_json::Value> = config
@@ -429,7 +441,9 @@ pub async fn apply_blueprint(
             let key = install_state::state_key(&entry.task_id, &node_id);
             let mut config = state.config.lock().await;
             config.data.installed_tasks.insert(key, install_record);
-            let _ = config.save();
+            config.save().map_err(|e| AppError::Config(format!(
+                "Failed to save install state for task '{}': {}", entry.task_id, e
+            )))?;
         }
 
         let _ = app.emit(
@@ -757,6 +771,18 @@ pub async fn apply_blueprint_bulk(
                 _ => {}
             }
 
+            // Enforce privilege level constraints for local execution
+            if task.privilege_level() == PrivilegeLevel::Admin && node.kind == NodeKind::Local {
+                if !crate::polkit::auth::is_policy_installed() {
+                    let _ = app.emit("blueprint-task-warning", serde_json::json!({
+                        "blueprint_id": blueprint_id,
+                        "task_id": entry.task_id,
+                        "warning": format!("Task '{}' skipped: requires admin privileges but PolicyKit policy is not installed", entry.task_id),
+                    }));
+                    continue;
+                }
+            }
+
             // Merge config: base task config + blueprint overrides
             let config = state.config.lock().await;
             let mut task_config: HashMap<String, serde_json::Value> = config
@@ -808,7 +834,13 @@ pub async fn apply_blueprint_bulk(
                         let key = install_state::state_key(&entry.task_id, node_id);
                         let mut config = state.config.lock().await;
                         config.data.installed_tasks.insert(key, install_record);
-                        let _ = config.save();
+                        if let Err(e) = config.save() {
+                            node_error = Some(format!(
+                                "Failed to save install state for task '{}': {}",
+                                entry.task_id, e
+                            ));
+                            break;
+                        }
                     }
 
                     let _ = app.emit(

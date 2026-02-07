@@ -30,5 +30,4 @@ export interface BlueprintApplyProgressEvent {
 export interface BlueprintApplyCompleteEvent {
   node_id: string;
   blueprint_id: string;
-  results: Record<string, string>;
 }

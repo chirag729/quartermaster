@@ -9,7 +9,7 @@ use crate::executor::local::LocalExecutor;
 use crate::executor::ssh::SshExecutor;
 use crate::fleet::NodeKind;
 use crate::tasks::install_state;
-use crate::tasks::TaskInfo;
+use crate::tasks::{ExecutionTarget, PrivilegeLevel, TaskInfo};
 use crate::state::AppState;
 
 /// Extended task info returned to the frontend, including installation state.
@@ -154,15 +154,50 @@ pub async fn execute_task(
 
     let effective_node_id = node_id.clone().unwrap_or_else(|| "local".to_string());
 
-    // Choose executor based on node kind
-    let exec: Box<dyn CommandExecutor> = if let Some(ref nid) = node_id {
+    // Look up the node once (if targeting a specific node)
+    let node = if let Some(ref nid) = node_id {
         let fleet_manager = state.fleet_manager.lock().await;
-        let node = fleet_manager
-            .get_node(nid)
-            .cloned()
-            .ok_or_else(|| AppError::Fleet(format!("Node not found: {}", nid)))?;
-        drop(fleet_manager);
+        Some(
+            fleet_manager
+                .get_node(nid)
+                .cloned()
+                .ok_or_else(|| AppError::Fleet(format!("Node not found: {}", nid)))?,
+        )
+    } else {
+        None
+    };
+    let is_remote = node.as_ref().map_or(false, |n| n.kind == NodeKind::Remote);
 
+    // Enforce privilege_level constraint for local execution
+    if task.privilege_level() == PrivilegeLevel::Admin && !is_remote {
+        if !crate::polkit::auth::is_policy_installed() {
+            return Err(AppError::Task(format!(
+                "Task '{}' requires admin privileges but the PolicyKit policy is not installed. \
+                 Install it from Settings first.",
+                task_id
+            )));
+        }
+    }
+
+    // Enforce execution_target constraint
+    match task.execution_target() {
+        ExecutionTarget::LocalOnly if is_remote => {
+            return Err(AppError::Task(format!(
+                "Task '{}' can only run on local nodes",
+                task_id
+            )));
+        }
+        ExecutionTarget::RemoteOnly if !is_remote => {
+            return Err(AppError::Task(format!(
+                "Task '{}' can only run on remote nodes",
+                task_id
+            )));
+        }
+        _ => {}
+    }
+
+    // Choose executor based on node kind
+    let exec: Box<dyn CommandExecutor> = if let Some(node) = node {
         match node.kind {
             NodeKind::Local => Box::new(LocalExecutor::new()),
             NodeKind::Remote => {

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Layers, ListChecks, Shield, Settings, Server, Monitor, Info, Copy, Trash2, Download, GitBranch, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Layers, ListChecks, Shield, Settings, Server, Monitor, Copy, Trash2, Download, GitBranch, Plus, X, type LucideIcon } from "lucide-react";
 import { useToastStore } from "../stores/toastStore";
 import { formatError } from "../lib/formatError";
 import { useBlueprintStore } from "../stores/blueprintStore";
@@ -11,6 +11,7 @@ import { Skeleton } from "../components/ui/Skeleton";
 import { Toggle } from "../components/ui/Toggle";
 import { ToastContainer } from "../components/ui/Toast";
 import { TaskConfigEditor } from "../components/blueprints/TaskConfigEditor";
+import { AddTaskDialog } from "../components/blueprints/AddTaskDialog";
 import * as api from "../services/tauriCommands";
 import type { Blueprint } from "../types/blueprint";
 import type { TaskInfo } from "../types/task";
@@ -47,9 +48,11 @@ export function BlueprintDetailPage() {
   const { cloneBlueprint, deleteBlueprint, exportBlueprint } = useBlueprintStore();
   const [blueprint, setBlueprint] = useState<Blueprint | null>(null);
   const [loading, setLoading] = useState(true);
+  const [allTasks, setAllTasks] = useState<TaskInfo[]>([]);
   const [taskInfoMap, setTaskInfoMap] = useState<Record<string, TaskInfo>>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [parentBlueprintName, setParentBlueprintName] = useState<string | null>(null);
+  const [showAddTask, setShowAddTask] = useState(false);
 
   const loadBlueprint = useCallback(async () => {
     if (!blueprintId) return;
@@ -82,6 +85,7 @@ export function BlueprintDetailPage() {
 
   useEffect(() => {
     api.listTasks().then((tasks) => {
+      setAllTasks(tasks);
       const map: Record<string, TaskInfo> = {};
       for (const t of tasks) map[t.id] = t;
       setTaskInfoMap(map);
@@ -134,6 +138,38 @@ export function BlueprintDetailPage() {
       setBlueprint(result);
     } catch (err) {
       addToast({ type: "error", title: "Toggle failed", message: formatError(err) });
+    }
+  };
+
+  const handleAddTask = async (taskId: string) => {
+    if (!blueprint) return;
+    const maxOrder = blueprint.task_entries.reduce((max, e) => Math.max(max, e.order), 0);
+    const updated = { ...blueprint };
+    updated.task_entries = [
+      ...updated.task_entries,
+      { task_id: taskId, enabled: true, config_overrides: {}, order: maxOrder + 1 },
+    ];
+    try {
+      const result = await api.updateBlueprint(updated);
+      setBlueprint(result);
+      const taskName = taskInfoMap[taskId]?.name ?? taskId;
+      addToast({ type: "success", title: "Task added", message: `Added "${taskName}" to blueprint` });
+    } catch (err) {
+      addToast({ type: "error", title: "Add failed", message: formatError(err) });
+    }
+  };
+
+  const handleRemoveTask = async (taskId: string) => {
+    if (!blueprint) return;
+    const updated = { ...blueprint };
+    updated.task_entries = updated.task_entries.filter((e) => e.task_id !== taskId);
+    try {
+      const result = await api.updateBlueprint(updated);
+      setBlueprint(result);
+      const taskName = taskInfoMap[taskId]?.name ?? taskId;
+      addToast({ type: "success", title: "Task removed", message: `Removed "${taskName}" from blueprint` });
+    } catch (err) {
+      addToast({ type: "error", title: "Remove failed", message: formatError(err) });
     }
   };
 
@@ -200,6 +236,8 @@ export function BlueprintDetailPage() {
     ? String(sdkFolderEntry.config_overrides.path)
     : undefined;
 
+  const existingTaskIds = blueprint.task_entries.map((e) => e.task_id);
+
   return (
     <div>
       <Button variant="ghost" size="sm" onClick={() => navigate("/blueprints")} className="mb-4">
@@ -229,27 +267,32 @@ export function BlueprintDetailPage() {
         </div>
       </div>
 
-      {blueprint.is_builtin && (
-        <div className="flex items-center gap-2 mb-4 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-          <Info size={16} className="text-blue-500 dark:text-blue-400 shrink-0" />
-          <p className="text-sm text-blue-700 dark:text-blue-300">
-            This is a built-in blueprint and cannot be edited. Clone it to make changes.
-          </p>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Task Entries</CardTitle>
-            <CardDescription>
-              {sortedEntries.length} {sortedEntries.length === 1 ? "task" : "tasks"} in this blueprint
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Task Entries</CardTitle>
+                <CardDescription>
+                  {sortedEntries.length} {sortedEntries.length === 1 ? "task" : "tasks"} in this blueprint
+                </CardDescription>
+              </div>
+              <Button size="sm" onClick={() => setShowAddTask(true)}>
+                <Plus size={14} />
+                Add Task
+              </Button>
+            </div>
           </CardHeader>
           {sortedEntries.length === 0 ? (
-            <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
-              No tasks configured in this blueprint.
-            </p>
+            <div className="text-center py-8">
+              <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-3">
+                No tasks configured in this blueprint.
+              </p>
+              <Button size="sm" variant="secondary" onClick={() => setShowAddTask(true)}>
+                <Plus size={14} />
+                Add your first task
+              </Button>
+            </div>
           ) : (
             <div className="space-y-2">
               {sortedEntries.map((entry, idx) => {
@@ -280,11 +323,18 @@ export function BlueprintDetailPage() {
                         <Toggle
                           checked={entry.enabled}
                           onChange={() => handleToggleTask(entry.task_id, entry.enabled)}
-                          disabled={blueprint.is_builtin}
                         />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTask(entry.task_id)}
+                          className="p-1 rounded-md hover:bg-red-100 dark:hover:bg-red-900/20 text-text-secondary-light dark:text-text-secondary-dark hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                          title="Remove task"
+                        >
+                          <X size={14} />
+                        </button>
                       </div>
                     </div>
-                    {!blueprint.is_builtin && taskInfo && taskInfo.config_schema.length > 0 && (
+                    {taskInfo && taskInfo.config_schema.length > 0 && (
                       <div className="ml-9 mt-1">
                         <TaskConfigEditor
                           taskId={entry.task_id}
@@ -374,6 +424,12 @@ export function BlueprintDetailPage() {
             </CardHeader>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
+                <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Version</span>
+                <span className="text-sm text-text-primary-light dark:text-text-primary-dark">
+                  {blueprint.version}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
                 <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Created</span>
                 <span className="text-sm text-text-primary-light dark:text-text-primary-dark">
                   {formatDate(blueprint.created_at)}
@@ -389,6 +445,14 @@ export function BlueprintDetailPage() {
           </Card>
         </div>
       </div>
+
+      <AddTaskDialog
+        open={showAddTask}
+        onClose={() => setShowAddTask(false)}
+        onAdd={handleAddTask}
+        tasks={allTasks}
+        existingTaskIds={existingTaskIds}
+      />
       <ToastContainer />
     </div>
   );
