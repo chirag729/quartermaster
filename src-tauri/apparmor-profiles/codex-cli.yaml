@@ -1,8 +1,8 @@
-id: claude-code
-name: Claude Code
-description: Confine Claude Code CLI to project workspace and configuration
-task_id: claude-code
-profile_name: quartermaster.claude-code
+id: codex-cli
+name: Codex CLI
+description: Confine Codex CLI to project workspace and configuration
+task_id: codex-cli
+profile_name: quartermaster.codex-cli
 mode: complain
 
 variables:
@@ -15,7 +15,7 @@ content: |
   abi <abi/4.0>,
   include <tunables/global>
 
-  profile claude-code {{home}}/.nvm/versions/node/*/bin/claude flags=({{mode}}) {
+  profile codex-cli {{home}}/.nvm/versions/node/*/bin/codex flags=({{mode}}) {
     include <abstractions/base>
     include <abstractions/nameservice>
     include <abstractions/ssl_certs>
@@ -34,16 +34,11 @@ content: |
     owner {{home}}/.rustup/** rwklix,
     owner {{home}}/.local/bin/* rix,
 
-    # ── Claude Code state ────────────────────────────────────────────
-    owner {{home}}/.local/share/claude/** rixm,
-    owner {{home}}/.claude.json rwk,
-    owner {{home}}/.claude.json.lock/ rwk,
-    owner {{home}}/.claude.json.lock/** rwk,
-    owner {{home}}/.claude.json.tmp.* rwk,
-    owner {{home}}/.claude/ rw,
-    owner {{home}}/.claude/** rwkl,
-    owner {{home}}/.config/claude-code/ rw,
-    owner {{home}}/.config/claude-code/** rwk,
+    # ── Codex config/data ────────────────────────────────────────────
+    owner {{home}}/.codex/ rw,
+    owner {{home}}/.codex/** rwk,
+    owner {{home}}/.config/codex/ rw,
+    owner {{home}}/.config/codex/** rwk,
 
     # ── Git client (config, SSH read-only) ───────────────────────────
     owner {{home}}/.gitconfig r,

@@ -15,41 +15,113 @@ content: |
   abi <abi/4.0>,
   include <tunables/global>
 
-  profile flutter {{sdk_base_path}}/flutter/bin/flutter flags=({{mode}}) {
+  profile flutter {{sdk_base_path}}/flutter/bin/{flutter,dart} flags=({{mode}}) {
     include <abstractions/base>
     include <abstractions/nameservice>
+    include <abstractions/ssl_certs>
+    include <abstractions/user-tmp>
 
-    # Flutter SDK read + execute
-    {{sdk_base_path}}/flutter/** rmix,
-    {{sdk_base_path}}/flutter/ r,
+    # ── Shell environment (bash init, nvm, Cargo/Rust, user bins) ────
+    owner {{home}}/.bashrc r,
+    owner {{home}}/.bash_aliases r,
+    owner {{home}}/.bash_history rw,
+    owner {{home}}/.inputrc r,
+    owner {{home}}/.profile r,
+    owner {{home}}/.nvm/** rixm,
+    owner {{home}}/.cargo/env r,
+    owner {{home}}/.cargo/bin/* rixm,
+    owner {{home}}/.rustup/ r,
+    owner {{home}}/.rustup/** rwklix,
+    owner {{home}}/.local/bin/* rix,
 
-    # Dart pub cache
-    {{home}}/.pub-cache/** rwk,
-    {{home}}/.pub-cache/ r,
+    # ── Git client (config, SSH read-only) ───────────────────────────
+    owner {{home}}/.gitconfig r,
+    owner {{home}}/.gitignore r,
+    owner {{home}}/.config/git/** r,
+    owner {{home}}/.ssh/ r,
+    owner {{home}}/.ssh/config r,
+    owner {{home}}/.ssh/known_hosts* r,
+    owner {{home}}/.ssh/*.pub r,
 
-    # Project workspace
-    {{projects_path}}/** rwk,
-    {{projects_path}}/ r,
+    # ── JDK toolchain (Gradle, Maven, Java, Kotlin, Ivy) ────────────
+    owner {{home}}/.gradle/ r,
+    owner {{home}}/.gradle/** rwklixm,
+    owner {{home}}/.m2/ r,
+    owner {{home}}/.m2/** rwkl,
+    owner {{home}}/.java/ r,
+    owner {{home}}/.java/** rwkl,
+    owner {{home}}/.ivy2/** rwkl,
+    owner {{home}}/.local/share/kotlin/** rwklix,
 
-    # Networking for pub get, etc.
+    # ── Flutter SDK (config, Dart tools, pub cache, Android) ─────────
+    owner {{home}}/.config/flutter/ rwk,
+    owner {{home}}/.config/flutter/** rwklix,
+    owner {{home}}/.dart-tool/ rwk,
+    owner {{home}}/.dart-tool/** rwklix,
+    owner {{home}}/.pub-cache/ rw,
+    owner {{home}}/.pub-cache/** rwk,
+    owner {{home}}/.android/ rw,
+    owner {{home}}/.android/** rwk,
+
+    # ── System binaries ──────────────────────────────────────────────
+    /bin/* rixm,
+    /usr/bin/{[^s]*,?[^n]*,??[^a]*,???[^p]*} rixm,
+    /usr/local/bin/** rixm,
+    /usr/lib/ r,
+    /usr/lib/** rixm,
+    /usr/lib64/ r,
+    /usr/lib64/** rixm,
+    /usr/libexec/** rixm,
+    /usr/share/** r,
+
+    # ── Flutter SDK read + execute ───────────────────────────────────
+    owner {{sdk_base_path}}/flutter/** rwkix,
+
+    # ── Android SDK ──────────────────────────────────────────────────
+    owner {{sdk_base_path}}/android/** rwkix,
+
+    # ── Project workspace ────────────────────────────────────────────
+    owner {{home}}/Development/ r,
+    owner {{projects_path}}/ r,
+    owner {{projects_path}}/** rwkl,
+
+    # ── Java ─────────────────────────────────────────────────────────
+    /usr/lib/jvm/** rix,
+    /etc/java*/** r,
+
+    # ── Chrome/Chromium (web dev) ────────────────────────────────────
+    /opt/google/chrome/** rix,
+
+    # ── GTK/Linux desktop dependencies ───────────────────────────────
+    /usr/include/** r,
+
+    # ── Network ──────────────────────────────────────────────────────
     network inet stream,
     network inet dgram,
     network inet6 stream,
     network inet6 dgram,
 
-    # Temp files
-    /tmp/** rwk,
+    # ── USB debugging ────────────────────────────────────────────────
+    /dev/bus/usb/** rw,
+    /sys/bus/usb/** r,
+    /sys/devices/** r,
 
-    # System libraries and shared objects
-    /usr/lib/** rm,
-    /usr/lib64/** rm,
-    /lib/** rm,
-    /lib64/** rm,
+    # ── Proc filesystem ──────────────────────────────────────────────
+    @{PROC}/@{pid}/** r,
+    @{PROC}/sys/kernel/random/uuid r,
 
-    # Process info
-    @{PROC}/self/** r,
+    # ── X11/Wayland ──────────────────────────────────────────────────
+    owner {{home}}/.Xauthority r,
+    /tmp/.X11-unix/* rw,
+    owner /run/user/*/wayland-* rw,
 
-    # Device access for flutter run
-    /dev/null rw,
-    /dev/urandom r,
+    # ── Temp files ───────────────────────────────────────────────────
+    owner /tmp/flutter_tools.* rwk,
+    owner /tmp/dart* rwk,
+    owner /tmp/pub_* rwk,
+
+    # ── Deny sensitive areas ─────────────────────────────────────────
+    deny {{home}}/.ssh/id_* r,
+    deny {{home}}/.gnupg/** rwx,
+    deny /etc/shadow r,
   }

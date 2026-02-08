@@ -1,79 +1,35 @@
 id: intellij-idea
 name: IntelliJ IDEA
-description: Download and install IntelliJ IDEA Community Edition
+description: Install IntelliJ IDEA from the Snap Store
 icon: Code
 category: Applications
 tags: [ide, java]
-privilege: user
+privilege: admin
 target: local_only
-version: "2024.3.3"
 variables: [dev_folder]
-
-config:
-  - key: edition
-    label: Edition
-    type: select
-    default: community
-    options: [community, ultimate]
-    required: false
-  - key: install_path
-    label: Installation path
-    type: path
-    default: "~/.local/share/JetBrains/IntelliJIdea"
-    required: false
-
-download:
-  url: "https://download.jetbrains.com/idea/ideaIC-{{version}}.tar.gz"
-  extract: tar.gz
-  dest: "{{install_path}}"
-
-desktop:
-  name: IntelliJ IDEA
-  icon_source: bin/idea.svg
-  exec: bin/idea
-  categories: [Development, IDE]
-  mime_types: [text/x-java-source]
 
 apparmor:
   profile: intellij
-  abstractions: [shell-environment, git-client, jdk-toolchain]
-  tunables:
-    QM_PROJECTS: "{{dev_folder}}/Projects"
 
 detect: |
-  test -d {{install_path}} && test -f {{install_path}}/bin/idea.sh
+  snap list intellij-idea 2>/dev/null | grep -q intellij-idea
 
 steps:
-  - name: Create install directory
-    progress: 10
-    run: |
-      mkdir -p {{install_path}}
-
-  - name: Download and extract IntelliJ IDEA
-    progress: 70
-    run: |
-      TMPDIR=$(mktemp -d)
-      curl -fSL -o "$TMPDIR/idea.tar.gz" \
-        https://download.jetbrains.com/idea/ideaIC-{{version}}.tar.gz
-      tar xzf "$TMPDIR/idea.tar.gz" -C {{install_path}} --strip-components=1
-      rm -rf "$TMPDIR"
-
-  - name: Create desktop entry
+  - name: Install IntelliJ IDEA snap
     progress: 90
     run: |
-      mkdir -p {{home}}/.local/share/applications
-      cat > {{home}}/.local/share/applications/jetbrains-idea.desktop << DESKTOP
-      [Desktop Entry]
-      Type=Application
-      Name=IntelliJ IDEA
-      Icon={{install_path}}/bin/idea.svg
-      Exec={{install_path}}/bin/idea %f
-      Categories=Development;IDE;
-      Terminal=false
-      StartupWMClass=jetbrains-idea
-      DESKTOP
+      snap install intellij-idea --classic
 
   - name: Verify installation
     progress: 100
     run: |
-      test -f {{install_path}}/bin/idea.sh
+      snap list intellij-idea
+
+uninstall:
+  - name: Remove IntelliJ IDEA snap
+    progress: 100
+    run: |
+      snap remove intellij-idea
+
+version_detect: |
+  snap list intellij-idea 2>/dev/null | awk '/^intellij-idea / {print $2}'

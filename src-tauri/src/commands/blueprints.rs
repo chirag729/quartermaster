@@ -4,6 +4,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::blueprints::{Blueprint, BlueprintTaskEntry};
+use crate::commands::tasks::sync_stale_profiles;
 use crate::error::AppError;
 use crate::executor::CommandExecutor;
 use crate::executor::dry_run::{DryRunAction, DryRunExecutor};
@@ -521,6 +522,9 @@ pub async fn apply_blueprint(
     }
     drop(fleet_manager);
 
+    // Sync any installed AppArmor profiles that may have become stale
+    sync_stale_profiles(&*state).await;
+
     // Emit completion
     let _ = app.emit(
         "blueprint-apply-complete",
@@ -961,6 +965,9 @@ pub async fn apply_blueprint_bulk(
             error: node_error,
         });
     }
+
+    // Sync any installed AppArmor profiles that may have become stale
+    sync_stale_profiles(&*state).await;
 
     // Emit final progress (all completed)
     let _ = app.emit(

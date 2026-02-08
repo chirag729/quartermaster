@@ -49,22 +49,25 @@ Downloads Android command-line tools for Android development.
 | Execution Target | Any |
 | Tags | `mobile`, `android` |
 
-### intellij-idea
+### rust-toolchain
 
-Downloads and installs IntelliJ IDEA Community Edition from the JetBrains tarball.
+Installs the Rust toolchain via rustup, including `rustc`, `cargo`, and `rustup` itself.
 
 | Property | Value |
 |----------|-------|
 | Privilege | User |
+| Execution Target | Any |
+| Tags | `rust`, `toolchain` |
+
+### intellij-idea
+
+Installs IntelliJ IDEA from the Snap Store using classic confinement. The snap is secured with a Quartermaster-managed AppArmor profile.
+
+| Property | Value |
+|----------|-------|
+| Privilege | Admin |
 | Execution Target | LocalOnly |
 | Tags | `ide`, `java` |
-
-Configuration:
-
-| Key | Label | Type | Default | Options |
-|-----|-------|------|---------|---------|
-| `edition` | Edition | Select | `community` | `community`, `ultimate` |
-| `install_path` | Installation path | Path | `~/.local/share/JetBrains/IntelliJIdea` | -- |
 
 ### claude-code
 

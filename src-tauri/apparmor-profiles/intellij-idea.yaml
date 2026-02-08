@@ -10,76 +10,173 @@ variables:
     label: Projects Directory
     type: path
     default: "~/Development/Projects"
-  - key: sdk_base_path
-    label: SDK Base Directory
-    type: path
-    default: "~/SDK"
 
 content: |
   abi <abi/4.0>,
   include <tunables/global>
 
-  profile intellij-idea /snap/intellij-idea-{{edition}}/current/bin/idea flags=({{mode}}) {
+  profile intellij-idea /snap/intellij-idea/*/bin/* flags=({{mode}}) {
     include <abstractions/base>
+    include <abstractions/consoles>
     include <abstractions/nameservice>
-    include <abstractions/X>
-    include <abstractions/wayland>
+    include <abstractions/ssl_certs>
+    include <abstractions/gnome>
+    include <abstractions/xdg-open>
+    include <abstractions/dbus-session>
 
-    # IntelliJ snap directory read + execute
-    /snap/intellij-idea-{{edition}}/** rmix,
-    /snap/intellij-idea-{{edition}}/ r,
+    # ── Shell environment (bash init, nvm, Cargo/Rust, user bins) ────
+    owner {{home}}/.bashrc r,
+    owner {{home}}/.bash_aliases r,
+    owner {{home}}/.bash_history rw,
+    owner {{home}}/.inputrc r,
+    owner {{home}}/.profile r,
+    owner {{home}}/.nvm/** rixm,
+    owner {{home}}/.cargo/env r,
+    owner {{home}}/.cargo/bin/* rixm,
+    owner {{home}}/.rustup/ r,
+    owner {{home}}/.rustup/** rwklix,
+    owner {{home}}/.local/bin/* rix,
 
-    # Project workspace
-    {{projects_path}}/** rwk,
-    {{projects_path}}/ r,
+    # ── Git client (config, SSH read-only) ───────────────────────────
+    owner {{home}}/.gitconfig r,
+    owner {{home}}/.gitignore r,
+    owner {{home}}/.config/git/** r,
+    owner {{home}}/.ssh/ r,
+    owner {{home}}/.ssh/config r,
+    owner {{home}}/.ssh/known_hosts* r,
+    owner {{home}}/.ssh/*.pub r,
 
-    # SDK directories read + execute
-    {{sdk_base_path}}/** rmix,
-    {{sdk_base_path}}/ r,
+    # ── JDK toolchain (Gradle, Maven, Java, Kotlin, Ivy) ────────────
+    owner {{home}}/.gradle/ r,
+    owner {{home}}/.gradle/** rwklixm,
+    owner {{home}}/.m2/ r,
+    owner {{home}}/.m2/** rwkl,
+    owner {{home}}/.java/ r,
+    owner {{home}}/.java/** rwkl,
+    owner {{home}}/.ivy2/** rwkl,
+    owner {{home}}/.local/share/kotlin/** rwklix,
 
-    # JetBrains config and caches
-    {{home}}/.config/JetBrains/** rwk,
-    {{home}}/.config/JetBrains/ r,
-    {{home}}/.local/share/JetBrains/** rwk,
-    {{home}}/.local/share/JetBrains/ r,
-    {{home}}/.cache/JetBrains/** rwk,
-    {{home}}/.cache/JetBrains/ r,
-    {{home}}/.java/** rwk,
-    {{home}}/.java/ r,
-
-    # Git access
-    /usr/bin/git rmix,
-    /usr/lib/git-core/** rmix,
-    {{home}}/.gitconfig r,
-    {{home}}/.config/git/** r,
-
-    # JVM execution
-    /usr/lib/jvm/** rmix,
-    /usr/lib64/jvm/** rmix,
-
-    # Networking
-    network inet stream,
-    network inet dgram,
-    network inet6 stream,
-    network inet6 dgram,
-
-    # System libraries
-    /usr/lib/** rm,
-    /usr/lib64/** rm,
-    /lib/** rm,
-    /lib64/** rm,
-
-    # Display and graphics
-    /dev/dri/** rw,
-    /sys/devices/** r,
-
-    # Process info
+    # ── System resources ─────────────────────────────────────────────
+    /etc/** r,
+    /dev/** r,
+    /dev/ptmx rw,
+    /dev/shm/ r,
+    owner /dev/shm/.org.chromium.Chromium.* rwk,
+    @{PROC}/ r,
     @{PROC}/** r,
+    owner @{PROC}/@{pid}/coredump_filter rw,
+    owner @{PROC}/@{pid}/oom_score_adj rw,
+    owner @{PROC}/@{pid}/clear_refs w,
+    /sys/** r,
 
-    # Temp files
-    /tmp/** rwk,
+    # ── System binaries ──────────────────────────────────────────────
+    /bin/* rixm,
+    /usr/bin/{[^s]*,?[^n]*,??[^a]*,???[^p]*} rixm,
+    /usr/local/bin/** rixm,
+    /usr/include/** r,
+    /usr/lib/ r,
+    /usr/lib/** rixm,
+    /usr/lib64/ r,
+    /usr/lib64/** rixm,
+    /usr/libexec/** rixm,
+    /usr/sbin/* rixm,
+    /usr/share/** r,
 
-    # Device access
-    /dev/null rw,
-    /dev/urandom r,
+    /{,snap/core/[0-9]*/,snap/snapd/[0-9]*/}usr/bin/snap mrCx -> snap_browsers,
+
+    # ── Temp / runtime ───────────────────────────────────────────────
+    owner /tmp/ r,
+    owner /tmp/** rwlkix,
+    owner /var/tmp/ r,
+    owner /var/tmp/** rwlkix,
+    owner /run/user/@{uid}/at-spi/* rw,
+    owner /run/user/@{uid}/bus rw,
+    owner /run/user/@{uid}/dconf/user rw,
+    owner /run/user/@{uid}/gdm/Xauthority r,
+    owner /run/user/@{uid}/keyring/ssh rw,
+    owner /run/user/@{uid}/jb.* rwk,
+
+    # ── IntelliJ snap installation ───────────────────────────────────
+    /snap/intellij-idea/ r,
+    /snap/intellij-idea/** rmixk,
+
+    # ── Home directory traversal ─────────────────────────────────────
+    / r,
+    /home/ r,
+    owner {{home}}/ r,
+
+    # ── JetBrains state ──────────────────────────────────────────────
+    owner {{home}}/.cache/JNA/ rwk,
+    owner {{home}}/.cache/JNA/** rwk,
+    owner {{home}}/.cache/JetBrains/ r,
+    owner {{home}}/.cache/JetBrains/** rwklix,
+    owner {{home}}/.cache/mesa_shader_cache/** rwk,
+    owner {{home}}/.cache/ibus/* rw,
+    owner {{home}}/.config/JetBrains/ r,
+    owner {{home}}/.config/JetBrains/** rwkl,
+    owner {{home}}/.config/dconf/user r,
+    owner {{home}}/.config/ibus/bus/ r,
+    owner {{home}}/.config/ibus/bus/* r,
+    owner {{home}}/.local/share/JetBrains/ r,
+    owner {{home}}/.local/share/JetBrains/** rwklix,
+    owner {{home}}/.junie/ r,
+    owner {{home}}/.junie/** rwkl,
+
+    # ── Project workspace ────────────────────────────────────────────
+    owner {{home}}/Development/ r,
+    owner {{projects_path}}/ r,
+    owner {{projects_path}}/** rwklix,
+
+    # ── IPC ──────────────────────────────────────────────────────────
+    signal (send,receive) set=(int,term,kill) peer=intellij-idea,
+    ptrace peer=intellij-idea,
+    ptrace (read),
+    dbus receive bus="accessibility" path="/org/a11y/atspi/**",
+
+    # ── Deny sensitive areas ─────────────────────────────────────────
+    deny {{home}}/.ssh/id_* r,
+    deny {{home}}/.gnupg/** rwx,
+    deny /etc/shadow r,
+
+    profile snap_browsers {
+      include <abstractions/base>
+      include <abstractions/dbus-session-strict>
+
+      /etc/passwd r,
+      /etc/nsswitch.conf r,
+      /etc/fstab r,
+      /etc/local/fstab r,
+
+      deny owner /run/user/[0-9]*/gdm/Xauthority r,
+
+      /{,snap/core/[0-9]*/,snap/snapd/[0-9]*/}usr/bin/snap mrix,
+      /{,snap/core/[0-9]*/,snap/snapd/[0-9]*/}usr/lib/snapd/info r,
+      /{,snap/core/[0-9]*/,snap/snapd/[0-9]*/}usr/lib/snapd/snapd r,
+      /{,snap/core/[0-9]*/,snap/snapd/[0-9]*/}usr/lib/snapd/snap-seccomp rPix,
+      /{,snap/core/[0-9]*/,snap/snapd/[0-9]*/}usr/lib/snapd/snap-confine Pix,
+      /var/lib/snapd/system-key r,
+      /run/snapd.socket rw,
+
+      /usr/bin/systemctl ix,
+
+      @{PROC}/version r,
+      @{PROC}/cmdline r,
+      @{PROC}/sys/net/core/somaxconn r,
+      @{PROC}/sys/kernel/seccomp/actions_avail r,
+      @{PROC}/sys/kernel/random/uuid r,
+      owner @{PROC}/@{pid}/cgroup r,
+      owner @{PROC}/@{pid}/mountinfo r,
+      owner {{home}}/.snap/auth.json r,
+
+      dbus send bus="session" path="/org/freedesktop/systemd1" interface="org.freedesktop.systemd1.Manager" member="StartTransientUnit" peer=(name="org.freedesktop.systemd1"),
+      dbus receive bus="session" path="/org/freedesktop/systemd1" interface="org.freedesktop.systemd1.Manager" member="JobRemoved",
+
+      /sys/fs/cgroup/cgroup.controllers r,
+      /sys/kernel/security/apparmor/features/ r,
+      /sys/kernel/security/apparmor/features/** r,
+
+      /snap/{brave,chromium,firefox,opera}/[0-9]*/meta/{snap.yaml,hooks/} r,
+      /var/lib/snapd/sequence/{brave,chromium,firefox,opera}.json r,
+      /var/lib/snapd/inhibit/{brave,chromium,firefox,opera}.lock rk,
+    }
   }

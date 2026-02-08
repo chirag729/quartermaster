@@ -15,47 +15,71 @@ content: |
   abi <abi/4.0>,
   include <tunables/global>
 
-  profile android-sdk {{sdk_base_path}}/android-sdk/cmdline-tools/latest/bin/* flags=({{mode}}) {
+  profile android-sdk {{sdk_base_path}}/android/cmdline-tools/latest/bin/* flags=({{mode}}) {
     include <abstractions/base>
     include <abstractions/nameservice>
+    include <abstractions/ssl_certs>
 
-    # Android SDK read + execute
-    {{sdk_base_path}}/android-sdk/** rmix,
-    {{sdk_base_path}}/android-sdk/ r,
+    # ── Shell environment (bash init, nvm, Cargo/Rust, user bins) ────
+    owner {{home}}/.bashrc r,
+    owner {{home}}/.bash_aliases r,
+    owner {{home}}/.inputrc r,
+    owner {{home}}/.profile r,
+    owner {{home}}/.local/bin/* rix,
 
-    # Android user config and caches
-    {{home}}/.android/** rwk,
-    {{home}}/.android/ r,
-    {{home}}/.gradle/** rwk,
-    {{home}}/.gradle/ r,
+    # ── JDK toolchain (Gradle, Maven, Java) ──────────────────────────
+    owner {{home}}/.gradle/ r,
+    owner {{home}}/.gradle/** rwklixm,
+    owner {{home}}/.m2/ r,
+    owner {{home}}/.m2/** rwkl,
+    owner {{home}}/.java/ r,
+    owner {{home}}/.java/** rwkl,
 
-    # Project workspace
-    {{projects_path}}/** rwk,
-    {{projects_path}}/ r,
+    # ── Android SDK read + execute ───────────────────────────────────
+    owner {{sdk_base_path}}/android/** rmix,
+    owner {{sdk_base_path}}/android/ r,
 
-    # Networking for SDK downloads and builds
+    # ── Android user config and caches ───────────────────────────────
+    owner {{home}}/.android/ r,
+    owner {{home}}/.android/** rwk,
+
+    # ── Project workspace ────────────────────────────────────────────
+    owner {{projects_path}}/ r,
+    owner {{projects_path}}/** rwk,
+
+    # ── Networking for SDK downloads and builds ──────────────────────
     network inet stream,
     network inet dgram,
     network inet6 stream,
     network inet6 dgram,
 
-    # JVM execution
+    # ── JVM execution ────────────────────────────────────────────────
     /usr/lib/jvm/** rmix,
     /usr/lib64/jvm/** rmix,
 
-    # System libraries
-    /usr/lib/** rm,
-    /usr/lib64/** rm,
-    /lib/** rm,
-    /lib64/** rm,
+    # ── System binaries ──────────────────────────────────────────────
+    /bin/* rixm,
+    /usr/bin/{[^s]*,?[^n]*,??[^a]*,???[^p]*} rixm,
+    /usr/local/bin/** rixm,
+    /usr/lib/ r,
+    /usr/lib/** rixm,
+    /usr/lib64/ r,
+    /usr/lib64/** rixm,
+    /usr/libexec/** rixm,
+    /usr/share/** r,
 
-    # Temp files
+    # ── Temp files ───────────────────────────────────────────────────
     /tmp/** rwk,
 
-    # Process info
-    @{PROC}/self/** r,
+    # ── Proc filesystem ──────────────────────────────────────────────
+    @{PROC}/@{pid}/** r,
 
-    # Device access
+    # ── Device access ────────────────────────────────────────────────
     /dev/null rw,
     /dev/urandom r,
+
+    # ── Deny sensitive areas ─────────────────────────────────────────
+    deny {{home}}/.ssh/id_* r,
+    deny {{home}}/.gnupg/** rwx,
+    deny /etc/shadow r,
   }

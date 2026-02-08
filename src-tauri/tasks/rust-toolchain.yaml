@@ -1,0 +1,31 @@
+id: rust-toolchain
+name: Rust Toolchain
+description: Install the Rust toolchain via rustup
+icon: Wrench
+category: SDKs
+tags: [rust, toolchain]
+privilege: user
+target: any
+
+detect: |
+  test -f {{home}}/.cargo/bin/rustc
+
+steps:
+  - name: Install rustup and Rust toolchain
+    progress: 90
+    run: |
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
+  - name: Verify installation
+    progress: 100
+    run: |
+      {{home}}/.cargo/bin/rustc --version
+
+uninstall:
+  - name: Remove Rust toolchain via rustup
+    progress: 100
+    run: |
+      {{home}}/.cargo/bin/rustup self uninstall -y
+
+version_detect: |
+  {{home}}/.cargo/bin/rustc --version 2>/dev/null | awk '{print $2}'

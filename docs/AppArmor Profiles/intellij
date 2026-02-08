@@ -1,6 +1,6 @@
 #include <tunables/global>
 
-profile idea /home/chirag/Applications/IntelliJ/idea*/bin/* {
+profile idea /snap/intellij-idea/*/bin/* {
     #include <abstractions/base>
     #include <abstractions/consoles>
     #include <abstractions/nameservice>
@@ -9,10 +9,8 @@ profile idea /home/chirag/Applications/IntelliJ/idea*/bin/* {
     #include <abstractions/xdg-open>
     #include <abstractions/dbus-session>
     #include <abstractions/shell-environment>
-    #include <abstractions/claude-code>
     #include <abstractions/git-client>
     #include <abstractions/jdk-toolchain>
-    #include <abstractions/flutter-sdk>
 
     # ── System resources ──────────────────────────────────────────────
     /etc/** r,
@@ -54,8 +52,9 @@ profile idea /home/chirag/Applications/IntelliJ/idea*/bin/* {
     owner /run/user/@{uid}/keyring/ssh rw,
     owner /run/user/@{uid}/jb.* rwk,
 
-    # ── IntelliJ installation ─────────────────────────────────────────
-    /home/chirag/Applications/IntelliJ/** rwkixm,
+    # ── IntelliJ snap installation ───────────────────────────────────
+    /snap/intellij-idea/ r,
+    /snap/intellij-idea/** rmixk,
 
     # ── Home directory traversal ──────────────────────────────────────
     / r,

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
+use crate::apparmor::template_manager::ProfileTemplateManager;
 use crate::error::AppError;
 use crate::executor::CommandExecutor;
 use crate::executor::local::LocalExecutor;
@@ -13,6 +14,31 @@ use crate::tasks::execution_log::ExecutionLog;
 use crate::tasks::install_state;
 use crate::tasks::{ExecutionTarget, OutputCallback, PrivilegeLevel, StepOutput, TaskInfo};
 use crate::state::AppState;
+
+/// Sync any installed AppArmor profiles that have become stale.
+/// Called after task execution to ensure profiles reflect the latest state.
+pub(crate) async fn sync_stale_profiles(state: &AppState) {
+    // Collect installed profile IDs under lock, then drop before async loop
+    let profile_ids: Vec<String> = {
+        let config = state.config.lock().await;
+        config.data.installed_profiles.keys().cloned().collect()
+    };
+
+    if profile_ids.is_empty() {
+        return;
+    }
+
+    for id in &profile_ids {
+        let mut config = state.config.lock().await;
+        let _ = ProfileTemplateManager::sync_profile(
+            id,
+            &state.profile_templates,
+            &state.registry,
+            &mut config,
+        )
+        .await;
+    }
+}
 
 /// Extended task info returned to the frontend, including installation state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -318,6 +344,10 @@ pub async fn execute_task(
     let key = install_state::state_key(&task_id, &effective_node_id);
     config.data.installed_tasks.insert(key, install_record);
     config.save()?;
+    drop(config);
+
+    // Sync any installed AppArmor profiles that may have become stale
+    sync_stale_profiles(&*state).await;
 
     Ok(())
 }
