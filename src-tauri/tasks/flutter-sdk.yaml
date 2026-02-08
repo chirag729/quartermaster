@@ -6,7 +6,6 @@ category: SDKs
 tags: [mobile, flutter]
 privilege: user
 target: any
-depends_on: [create-sdk-folder]
 variables: [sdk_folder]
 
 config:
@@ -23,20 +22,24 @@ config:
     required: false
 
 detect: |
-  test -f "{{sdk_base_path}}/flutter/bin/flutter"
+  test -f {{sdk_base_path}}/flutter/bin/flutter
 
 steps:
+  - name: Create SDK directory
+    progress: 5
+    run: |
+      mkdir -p {{sdk_base_path}}
+
   - name: Clone Flutter repository
     progress: 20
     run: |
-      mkdir -p "{{sdk_base_path}}"
-      git clone --depth 1 --branch "{{channel}}" \
-        https://github.com/flutter/flutter.git "{{sdk_base_path}}/flutter"
+      git clone --depth 1 --branch {{channel}} \
+        https://github.com/flutter/flutter.git {{sdk_base_path}}/flutter
 
   - name: Verify installation
     progress: 90
     run: |
-      test -f "{{sdk_base_path}}/flutter/bin/flutter"
+      test -f {{sdk_base_path}}/flutter/bin/flutter
 
   - name: Flutter SDK installed
     progress: 100

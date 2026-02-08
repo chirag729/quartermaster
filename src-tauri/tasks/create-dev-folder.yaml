@@ -15,10 +15,10 @@ config:
     required: true
 
 detect: |
-  test -d "{{path}}"
+  test -d {{path}}
 
 steps:
   - name: Create directory
     progress: 100
     run: |
-      mkdir -p "{{path}}"
+      mkdir -p {{path}}

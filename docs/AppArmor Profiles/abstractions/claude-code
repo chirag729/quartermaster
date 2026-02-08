@@ -5,8 +5,11 @@
   # ── Binary (symlink target from ~/.local/bin/claude) ───────────
   owner @{HOME}/.local/share/claude/** rixm,
 
-  # ── Top-level config ───────────────────────────────────────────
-  owner @{HOME}/.claude.json r,
+  # ── Top-level config (atomic writes use .lock/ dir + .tmp.* files) ─
+  owner @{HOME}/.claude.json rwk,
+  owner @{HOME}/.claude.json.lock/ rwk,
+  owner @{HOME}/.claude.json.lock/** rwk,
+  owner @{HOME}/.claude.json.tmp.* rwk,
 
   # ── State directory ────────────────────────────────────────────
   owner @{HOME}/.claude/ rw,

@@ -23,17 +23,6 @@ Creates the `~/Development` directory as a standard project root.
 | Tags | -- |
 | Config | None |
 
-### create-sdk-folder
-
-Creates the `~/SDK` directory for housing SDK installations.
-
-| Property | Value |
-|----------|-------|
-| Privilege | User |
-| Execution Target | Any |
-| Tags | -- |
-| Config | None |
-
 ### flutter-sdk
 
 Downloads and installs the Flutter SDK into the SDK directory.

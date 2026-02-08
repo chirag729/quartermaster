@@ -41,28 +41,28 @@ apparmor:
     QM_PROJECTS: "{{dev_folder}}/Projects"
 
 detect: |
-  test -d "{{install_path}}" && test -f "{{install_path}}/bin/idea.sh"
+  test -d {{install_path}} && test -f {{install_path}}/bin/idea.sh
 
 steps:
   - name: Create install directory
     progress: 10
     run: |
-      mkdir -p "{{install_path}}"
+      mkdir -p {{install_path}}
 
   - name: Download and extract IntelliJ IDEA
     progress: 70
     run: |
       TMPDIR=$(mktemp -d)
       curl -fSL -o "$TMPDIR/idea.tar.gz" \
-        "https://download.jetbrains.com/idea/ideaIC-{{version}}.tar.gz"
-      tar xzf "$TMPDIR/idea.tar.gz" -C "{{install_path}}" --strip-components=1
+        https://download.jetbrains.com/idea/ideaIC-{{version}}.tar.gz
+      tar xzf "$TMPDIR/idea.tar.gz" -C {{install_path}} --strip-components=1
       rm -rf "$TMPDIR"
 
   - name: Create desktop entry
     progress: 90
     run: |
-      mkdir -p "{{home}}/.local/share/applications"
-      cat > "{{home}}/.local/share/applications/jetbrains-idea.desktop" << DESKTOP
+      mkdir -p {{home}}/.local/share/applications
+      cat > {{home}}/.local/share/applications/jetbrains-idea.desktop << DESKTOP
       [Desktop Entry]
       Type=Application
       Name=IntelliJ IDEA
@@ -76,4 +76,4 @@ steps:
   - name: Verify installation
     progress: 100
     run: |
-      test -f "{{install_path}}/bin/idea.sh"
+      test -f {{install_path}}/bin/idea.sh

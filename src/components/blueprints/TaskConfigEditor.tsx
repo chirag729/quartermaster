@@ -13,8 +13,6 @@ interface TaskConfigEditorProps {
   entry: BlueprintTaskEntry;
   onSave: (taskId: string, overrides: Record<string, unknown>) => void;
   disabled?: boolean;
-  /** Map of task_id -> sdk_base_path for cascading */
-  sdkBasePath?: string;
 }
 
 export function TaskConfigEditor({
@@ -24,7 +22,6 @@ export function TaskConfigEditor({
   entry,
   onSave,
   disabled,
-  sdkBasePath,
 }: TaskConfigEditorProps) {
   const [expanded, setExpanded] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -35,14 +32,12 @@ export function TaskConfigEditor({
       const override = entry.config_overrides[field.key];
       if (override !== undefined) {
         initial[field.key] = String(override);
-      } else if (field.key === "sdk_base_path" && sdkBasePath) {
-        initial[field.key] = sdkBasePath;
       } else {
         initial[field.key] = field.default_value;
       }
     }
     setValues(initial);
-  }, [configSchema, entry.config_overrides, sdkBasePath]);
+  }, [configSchema, entry.config_overrides]);
 
   if (configSchema.length === 0) return null;
 
@@ -51,9 +46,6 @@ export function TaskConfigEditor({
     const saved = entry.config_overrides[field.key];
     if (saved !== undefined) {
       return current !== String(saved);
-    }
-    if (field.key === "sdk_base_path" && sdkBasePath) {
-      return current !== sdkBasePath;
     }
     return current !== field.default_value;
   });

@@ -179,21 +179,6 @@ export function BlueprintDetailPage() {
       e.task_id === taskId ? { ...e, config_overrides: overrides } : e,
     );
 
-    // Path cascading: if this is the SDK folder task and path changed,
-    // propagate to flutter_sdk and android_sdk as sdk_base_path
-    if (taskId === "create-sdk-folder" && overrides.path) {
-      const sdkPath = String(overrides.path);
-      updated.task_entries = updated.task_entries.map((e) => {
-        if (e.task_id === "flutter-sdk" || e.task_id === "android-sdk") {
-          return {
-            ...e,
-            config_overrides: { ...e.config_overrides, sdk_base_path: sdkPath },
-          };
-        }
-        return e;
-      });
-    }
-
     try {
       const result = await api.updateBlueprint(updated);
       setBlueprint(result);
@@ -228,12 +213,6 @@ export function BlueprintDetailPage() {
 
   const Icon = iconMap[blueprint.icon] || Layers;
   const sortedEntries = [...blueprint.task_entries].sort((a, b) => a.order - b.order);
-
-  // Get SDK folder path for cascading
-  const sdkFolderEntry = blueprint.task_entries.find((e) => e.task_id === "create-sdk-folder");
-  const sdkBasePath = sdkFolderEntry?.config_overrides?.path
-    ? String(sdkFolderEntry.config_overrides.path)
-    : undefined;
 
   const existingTaskIds = blueprint.task_entries.map((e) => e.task_id);
 
@@ -341,11 +320,6 @@ export function BlueprintDetailPage() {
                           configSchema={taskInfo.config_schema}
                           entry={entry}
                           onSave={handleConfigSave}
-                          sdkBasePath={
-                            (entry.task_id === "flutter-sdk" || entry.task_id === "android-sdk")
-                              ? sdkBasePath
-                              : undefined
-                          }
                         />
                       </div>
                     )}

@@ -4,8 +4,8 @@ use serde_json::Value;
 
 use super::yaml_schema::TaskDefinition;
 use super::{
-    AppArmorInfo, ConfigField, DesktopInfo, DownloadInfo, ExecutionTarget, PrivilegeLevel,
-    ProgressCallback, SetupTask, TaskStatus,
+    AppArmorInfo, ConfigField, DesktopInfo, DownloadInfo, ExecutionTarget, OutputCallback,
+    PrivilegeLevel, ProgressCallback, SetupTask, StepOutput, TaskStatus,
 };
 use crate::error::AppError;
 use crate::executor::CommandExecutor;
@@ -213,6 +213,7 @@ impl SetupTask for ScriptTask {
         config: &HashMap<String, Value>,
         exec: &dyn CommandExecutor,
         on_progress: &ProgressCallback,
+        on_output: Option<&OutputCallback>,
     ) -> Result<(), AppError> {
         let ctx = self.build_context(config, &exec.home_dir());
         let total_steps = self.definition.steps.len();
@@ -222,7 +223,22 @@ impl SetupTask for ScriptTask {
             on_progress(progress, step.name.clone());
 
             let script = Self::expand_template(&step.run, &ctx);
+            let start = std::time::Instant::now();
             let result = exec.run_command("sh", &["-c", &script]).await?;
+            let duration_ms = start.elapsed().as_millis() as u64;
+
+            if let Some(cb) = on_output {
+                cb(StepOutput {
+                    step_index: i,
+                    step_total: total_steps,
+                    step_name: step.name.clone(),
+                    command: script.clone(),
+                    stdout: result.stdout.clone(),
+                    stderr: result.stderr.clone(),
+                    exit_code: result.status,
+                    duration_ms,
+                });
+            }
 
             if result.status != 0 {
                 return Err(AppError::Task(format!(
@@ -248,6 +264,7 @@ impl SetupTask for ScriptTask {
         config: &HashMap<String, Value>,
         exec: &dyn CommandExecutor,
         on_progress: &ProgressCallback,
+        on_output: Option<&OutputCallback>,
     ) -> Result<(), AppError> {
         if self.definition.uninstall.is_empty() {
             return Err(AppError::Task(format!(
@@ -264,7 +281,22 @@ impl SetupTask for ScriptTask {
             on_progress(progress, step.name.clone());
 
             let script = Self::expand_template(&step.run, &ctx);
+            let start = std::time::Instant::now();
             let result = exec.run_command("sh", &["-c", &script]).await?;
+            let duration_ms = start.elapsed().as_millis() as u64;
+
+            if let Some(cb) = on_output {
+                cb(StepOutput {
+                    step_index: i,
+                    step_total: total_steps,
+                    step_name: step.name.clone(),
+                    command: script.clone(),
+                    stdout: result.stdout.clone(),
+                    stderr: result.stderr.clone(),
+                    exit_code: result.status,
+                    duration_ms,
+                });
+            }
 
             if result.status != 0 {
                 return Err(AppError::Task(format!(

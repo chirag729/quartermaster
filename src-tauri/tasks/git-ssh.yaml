@@ -25,7 +25,7 @@ config:
     required: false
 
 detect: |
-  test -f "{{home}}/.ssh/id_ed25519" \
+  test -f {{home}}/.ssh/id_ed25519 \
     && git config --global user.name >/dev/null 2>&1 \
     && git config --global user.email >/dev/null 2>&1
 
@@ -33,26 +33,26 @@ steps:
   - name: Configure git user.name
     progress: 10
     run: |
-      if [ -n "{{git_name}}" ]; then
-        git config --global user.name "{{git_name}}"
+      if [ -n {{git_name}} ]; then
+        git config --global user.name {{git_name}}
       fi
 
   - name: Configure git user.email
     progress: 30
     run: |
-      if [ -n "{{git_email}}" ]; then
-        git config --global user.email "{{git_email}}"
+      if [ -n {{git_email}} ]; then
+        git config --global user.email {{git_email}}
       fi
 
   - name: Generate SSH key
     progress: 100
     run: |
-      KEY_PATH="{{home}}/.ssh/id_ed25519"
+      KEY_PATH={{home}}/.ssh/id_ed25519
       if [ ! -f "$KEY_PATH" ]; then
-        mkdir -p "{{home}}/.ssh"
-        COMMENT="{{ssh_comment}}"
+        mkdir -p {{home}}/.ssh
+        COMMENT={{ssh_comment}}
         if [ -z "$COMMENT" ]; then
-          COMMENT="{{git_email}}"
+          COMMENT={{git_email}}
         fi
         ssh-keygen -t ed25519 -C "$COMMENT" -f "$KEY_PATH" -N ""
       fi

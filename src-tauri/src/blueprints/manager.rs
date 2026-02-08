@@ -64,6 +64,11 @@ impl BlueprintManager {
             for bp in defaults {
                 manager.add_blueprint(bp)?;
             }
+        } else {
+            // Sync builtin blueprints: overwrite stale on-disk copies with the
+            // latest embedded definitions so that task list changes (additions,
+            // removals, renames) are picked up on app restart.
+            manager.sync_builtin_blueprints()?;
         }
 
         Ok(manager)
@@ -132,6 +137,38 @@ impl BlueprintManager {
 
         // Reload after migration
         self.load_blueprints_from_disk()?;
+        Ok(())
+    }
+
+    /// Overwrite on-disk builtin blueprints with the latest embedded definitions.
+    /// This ensures task additions/removals/renames are picked up on app restart.
+    /// User-created blueprints (is_builtin == false) are left untouched.
+    fn sync_builtin_blueprints(&mut self) -> Result<(), AppError> {
+        let defaults = load_default_blueprints();
+        let mut changed = false;
+
+        for fresh in &defaults {
+            if let Some(idx) = self.blueprints.iter().position(|b| b.id == fresh.id && b.is_builtin) {
+                // Preserve timestamps from the on-disk version
+                let mut updated = fresh.clone();
+                updated.created_at = self.blueprints[idx].created_at;
+                updated.updated_at = self.blueprints[idx].updated_at;
+                self.save_blueprint_yaml(&updated)?;
+                self.blueprints[idx] = updated;
+                changed = true;
+            } else if !self.blueprints.iter().any(|b| b.id == fresh.id) {
+                // New builtin that doesn't exist on disk yet
+                self.save_blueprint_yaml(fresh)?;
+                self.blueprints.push(fresh.clone());
+                changed = true;
+            }
+        }
+
+        if changed {
+            // Re-sort to maintain consistent ordering
+            self.blueprints.sort_by(|a, b| a.id.cmp(&b.id));
+        }
+
         Ok(())
     }
 
@@ -595,7 +632,7 @@ mod tests {
     fn dev_workstation_has_expected_tasks() {
         let defaults = load_default_blueprints();
         let ws = defaults.iter().find(|b| b.name == "Development Workstation").unwrap();
-        assert_eq!(ws.task_entries.len(), 7);
+        assert_eq!(ws.task_entries.len(), 6);
         assert_eq!(ws.icon, "Monitor");
         let task_ids: Vec<&str> = ws.task_entries.iter().map(|t| t.task_id.as_str()).collect();
         assert!(task_ids.contains(&"flutter-sdk"));
@@ -606,7 +643,7 @@ mod tests {
     fn mobile_dev_has_expected_tasks() {
         let defaults = load_default_blueprints();
         let mobile = defaults.iter().find(|b| b.name == "Mobile Development").unwrap();
-        assert_eq!(mobile.task_entries.len(), 5);
+        assert_eq!(mobile.task_entries.len(), 4);
         assert_eq!(mobile.icon, "Smartphone");
     }
 

@@ -25,3 +25,16 @@ export interface BlueprintApplyCompleteEvent {
   node_id: string;
   blueprint_id: string;
 }
+
+export interface TaskOutputEvent {
+  node_id: string;
+  task_id: string;
+  step_index: number;
+  step_total: number;
+  step_name: string;
+  command: string;
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+  duration_ms: number;
+}

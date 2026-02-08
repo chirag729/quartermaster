@@ -8,9 +8,6 @@ tasks:
   - id: create-development-folder
     enabled: true
 
-  - id: create-sdk-folder
-    enabled: true
-
   - id: git-ssh
     enabled: true
 

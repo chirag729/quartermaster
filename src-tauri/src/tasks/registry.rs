@@ -198,29 +198,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resolve_dependencies_adds_transitive_deps() {
+    fn resolve_dependencies_no_deps_flutter() {
         let registry = create_registry();
         let result = registry.resolve_dependencies(&["flutter-sdk".to_string()]).unwrap();
-        assert!(result.contains(&"create-sdk-folder".to_string()));
-        assert!(result.contains(&"flutter-sdk".to_string()));
-        // Dependency must come before dependent
-        let sdk_pos = result.iter().position(|x| x == "create-sdk-folder").unwrap();
-        let flutter_pos = result.iter().position(|x| x == "flutter-sdk").unwrap();
-        assert!(sdk_pos < flutter_pos);
+        assert_eq!(result, vec!["flutter-sdk".to_string()]);
     }
 
     #[test]
-    fn resolve_dependencies_no_duplicates() {
+    fn resolve_dependencies_multiple_independent() {
         let registry = create_registry();
         let result = registry.resolve_dependencies(&[
             "flutter-sdk".to_string(),
             "android-sdk".to_string(),
         ]).unwrap();
-        // create-sdk-folder should appear exactly once
-        let count = result.iter().filter(|x| x.as_str() == "create-sdk-folder").count();
-        assert_eq!(count, 1);
         assert!(result.contains(&"flutter-sdk".to_string()));
         assert!(result.contains(&"android-sdk".to_string()));
+        assert_eq!(result.len(), 2);
     }
 
     #[test]
@@ -242,7 +235,6 @@ mod tests {
         let registry = create_registry();
         let ids: Vec<&str> = registry.tasks().iter().map(|t| t.id()).collect();
         assert!(ids.contains(&"create-development-folder"));
-        assert!(ids.contains(&"create-sdk-folder"));
         assert!(ids.contains(&"flutter-sdk"));
         assert!(ids.contains(&"android-sdk"));
         assert!(ids.contains(&"intellij-idea"));
@@ -257,6 +249,6 @@ mod tests {
         assert_eq!(flutter.name(), "Flutter SDK");
         assert_eq!(flutter.category(), "SDKs");
         assert_eq!(flutter.tags(), vec!["mobile".to_string(), "flutter".to_string()]);
-        assert_eq!(flutter.depends_on(), vec!["create-sdk-folder".to_string()]);
+        assert!(flutter.depends_on().is_empty());
     }
 }

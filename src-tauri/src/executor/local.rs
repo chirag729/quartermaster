@@ -29,6 +29,7 @@ impl CommandExecutor for LocalExecutor {
     async fn run_command(&self, cmd: &str, args: &[&str]) -> Result<CommandOutput, AppError> {
         let output = tokio::process::Command::new(cmd)
             .args(args)
+            .current_dir(&self.home)
             .output()
             .await?;
 

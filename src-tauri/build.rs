@@ -21,7 +21,7 @@ fn main() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let tasks_dir = Path::new(&manifest_dir).join("tasks");
     let blueprints_dir = Path::new(&manifest_dir).join("blueprints");
-    let profiles_dir = Path::new(&manifest_dir).join("profiles");
+    let profiles_dir = Path::new(&manifest_dir).join("apparmor-profiles");
 
     let task_files = collect_yaml_files(&tasks_dir);
     let blueprint_files = collect_yaml_files(&blueprints_dir);
@@ -47,7 +47,7 @@ fn main() {
 
     code.push_str("pub const BUILTIN_PROFILE_YAMLS: &[&str] = &[\n");
     for file in &profile_files {
-        code.push_str(&format!("    include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/profiles/{}\")),\n", file));
+        code.push_str(&format!("    include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/apparmor-profiles/{}\")),\n", file));
     }
     code.push_str("];\n");
 
@@ -56,7 +56,7 @@ fn main() {
     // Re-run build script if YAML files change
     println!("cargo:rerun-if-changed=tasks/");
     println!("cargo:rerun-if-changed=blueprints/");
-    println!("cargo:rerun-if-changed=profiles/");
+    println!("cargo:rerun-if-changed=apparmor-profiles/");
 
     tauri_build::build()
 }

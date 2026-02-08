@@ -12,7 +12,7 @@ use crate::executor::privileged::PrivilegedLocalExecutor;
 use crate::executor::ssh::SshExecutor;
 use crate::fleet::NodeKind;
 use crate::state::AppState;
-use crate::tasks::{ExecutionTarget, PrivilegeLevel, TaskStatus};
+use crate::tasks::{ExecutionTarget, OutputCallback, PrivilegeLevel, StepOutput, TaskStatus};
 use crate::tasks::install_state;
 
 fn bump_version(current: &str, bump_type: &str) -> String {
@@ -453,7 +453,26 @@ pub async fn apply_blueprint(
                 );
             });
 
-        if let Err(e) = task.execute(&task_config, exec, &progress_cb).await {
+        // Output callback for real-time step output
+        let app_for_output = app.clone();
+        let tid_for_output = entry.task_id.clone();
+        let nid_for_output = node_id.clone();
+        let output_cb: OutputCallback = Box::new(move |step: StepOutput| {
+            let _ = app_for_output.emit("task-output", serde_json::json!({
+                "node_id": nid_for_output,
+                "task_id": tid_for_output,
+                "step_index": step.step_index,
+                "step_total": step.step_total,
+                "step_name": step.step_name,
+                "command": step.command,
+                "stdout": step.stdout,
+                "stderr": step.stderr,
+                "exit_code": step.exit_code,
+                "duration_ms": step.duration_ms,
+            }));
+        });
+
+        if let Err(e) = task.execute(&task_config, exec, &progress_cb, Some(&output_cb)).await {
             let _ = app.emit(
                 "blueprint-task-failed",
                 serde_json::json!({
@@ -655,7 +674,7 @@ pub async fn dry_run_blueprint(
         let no_op_progress: crate::tasks::ProgressCallback =
             Box::new(|_progress, _message| {});
 
-        let exec_result = task.execute(&task_config, &dry_exec, &no_op_progress).await;
+        let exec_result = task.execute(&task_config, &dry_exec, &no_op_progress, None).await;
 
         let actions = dry_exec.take_actions();
 
@@ -866,7 +885,26 @@ pub async fn apply_blueprint_bulk(
                     );
                 });
 
-            match task.execute(&task_config, exec, &progress_cb).await {
+            // Output callback for real-time step output
+            let app_for_output = app.clone();
+            let tid_for_output = entry.task_id.clone();
+            let nid_for_output = node_id.clone();
+            let output_cb: OutputCallback = Box::new(move |step: StepOutput| {
+                let _ = app_for_output.emit("task-output", serde_json::json!({
+                    "node_id": nid_for_output,
+                    "task_id": tid_for_output,
+                    "step_index": step.step_index,
+                    "step_total": step.step_total,
+                    "step_name": step.step_name,
+                    "command": step.command,
+                    "stdout": step.stdout,
+                    "stderr": step.stderr,
+                    "exit_code": step.exit_code,
+                    "duration_ms": step.duration_ms,
+                }));
+            });
+
+            match task.execute(&task_config, exec, &progress_cb, Some(&output_cb)).await {
                 Ok(_) => {
                     // Record installation state for this task
                     {

@@ -13,12 +13,15 @@ import {
   XCircle,
   Circle,
   Clock,
+  Blocks,
 } from "lucide-react";
 import { useToastStore } from "../stores/toastStore";
 import { useBlueprintStore } from "../stores/blueprintStore";
 import { NodeStatusBadge } from "../components/fleet/NodeStatusBadge";
 import { AssignBlueprintDialog } from "../components/blueprints/AssignBlueprintDialog";
 import { PreRunConfigDialog } from "../components/blueprints/PreRunConfigDialog";
+import { RunTaskDialog } from "../components/fleet/RunTaskDialog";
+import { TaskExecutionDialog } from "../components/fleet/TaskExecutionDialog";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardHeader, CardTitle, CardDescription } from "../components/ui/Card";
@@ -61,6 +64,10 @@ export function NodeDetailPage() {
   const [applyingBlueprint, setApplyingBlueprint] = useState(false);
   const [allTasks, setAllTasks] = useState<TaskInfo[]>([]);
   const [applyProgress, setApplyProgress] = useState<string | null>(null);
+  const [showRunTask, setShowRunTask] = useState(false);
+  const [showExecution, setShowExecution] = useState(false);
+  const [executionTaskId, setExecutionTaskId] = useState<string>("");
+  const [executionTaskName, setExecutionTaskName] = useState<string>("");
 
   // ── Blueprint apply event listeners ─────────────────────────────────
 
@@ -136,11 +143,12 @@ export function NodeDetailPage() {
     }
   }, [nodeId, addToast]);
 
+  // Load task states when overview/tasks tab is active, run-task dialog opens, or on initial mount
   useEffect(() => {
-    if (activeTab === "tasks" && nodeId) {
+    if (nodeId && (activeTab === "tasks" || activeTab === "overview" || showRunTask)) {
       loadTaskStates();
     }
-  }, [activeTab, nodeId, loadTaskStates]);
+  }, [activeTab, showRunTask, nodeId, loadTaskStates]);
 
   // ── Refresh all data ───────────────────────────────────────────────
 
@@ -148,9 +156,7 @@ export function NodeDetailPage() {
     setRefreshing(true);
     try {
       await loadNode();
-      if (activeTab === "tasks") {
-        await loadTaskStates();
-      }
+      await loadTaskStates();
       addToast({ type: "success", title: "Refreshed" });
     } finally {
       setRefreshing(false);
@@ -167,6 +173,16 @@ export function NodeDetailPage() {
       addToast({ type: "success", title: "Blueprint assigned" });
       setShowAssign(false);
       await loadNode();
+      // Fetch the newly assigned blueprint and open the pre-run dialog
+      // so the user can review and run the tasks immediately
+      try {
+        const bp = await api.getBlueprint(blueprintId);
+        setBlueprint(bp);
+        await loadTaskStates();
+        setShowPreRun(true);
+      } catch {
+        // Non-critical: blueprint was assigned, just couldn't open pre-run
+      }
     } catch (err) {
       addToast({ type: "error", title: "Failed to assign blueprint", message: formatError(err) });
     } finally {
@@ -190,6 +206,11 @@ export function NodeDetailPage() {
 
   const handleRunTask = async (taskId: string) => {
     if (!nodeId) return;
+    // Look up the task name for the dialog title
+    const taskInfo = allTasks.find((t) => t.id === taskId) ?? taskStates.find((t) => t.id === taskId);
+    setExecutionTaskId(taskId);
+    setExecutionTaskName(taskInfo?.name ?? taskId);
+    setShowExecution(true);
     setRunningTaskId(taskId);
     try {
       await api.executeTask(taskId, nodeId, node?.blueprint_id ?? undefined);
@@ -202,9 +223,39 @@ export function NodeDetailPage() {
     }
   };
 
+  // Compute blueprint affiliation for each task: taskId -> blueprint names
+  const taskBlueprintMap = (() => {
+    const map = new Map<string, { id: string; name: string }[]>();
+    for (const bp of blueprints) {
+      for (const entry of bp.task_entries) {
+        if (!entry.enabled) continue;
+        const list = map.get(entry.task_id) ?? [];
+        list.push({ id: bp.id, name: bp.name });
+        map.set(entry.task_id, list);
+      }
+    }
+    return map;
+  })();
+
+  // Filter to only tasks that are installed, in a blueprint, or have an install record
+  const relevantTaskStates = taskStates.filter(
+    (t) => t.status === "completed" || t.installed_at || taskBlueprintMap.has(t.id),
+  );
+
+  // Group filtered task states by category
+  const groupedTaskStates = (() => {
+    const map = new Map<string, TaskStateInfo[]>();
+    for (const task of relevantTaskStates) {
+      const list = map.get(task.category) ?? [];
+      list.push(task);
+      map.set(task.category, list);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+  })();
+
   const handleSyncAll = async () => {
     if (!nodeId) return;
-    const outOfSync = taskStates.filter(
+    const outOfSync = relevantTaskStates.filter(
       (t) => t.config_drifted || t.version_changed || t.status === "failed",
     );
     if (outOfSync.length === 0) {
@@ -372,6 +423,10 @@ export function NodeDetailPage() {
             <Button variant="secondary" size="sm" onClick={handleOpenTerminal}>
               <Terminal size={14} />
               Terminal
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setShowRunTask(true)}>
+              <Play size={14} />
+              Run Task
             </Button>
             {node.blueprint_id && (
               <Button variant="secondary" size="sm" onClick={handleRunBlueprintClick}>
@@ -585,76 +640,95 @@ export function NodeDetailPage() {
             <EmptyState
               icon={<Layers size={32} />}
               title="No tasks found"
-              description="Assign a blueprint to this node to see task states, or check that tasks are registered."
+              description="No tasks are registered. Check that task definitions exist."
             />
           ) : (
-            <div className="space-y-2">
-              {taskStates.map((task) => {
-                const isDrifted = task.config_drifted || task.version_changed;
-                const isInstalled = task.status === "completed";
-                const isRunning = runningTaskId === task.id;
+            <div className="space-y-6">
+              {groupedTaskStates.map(([category, categoryTasks]) => (
+                <div key={category}>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-text-secondary-light dark:text-text-secondary-dark mb-2">
+                    {category}
+                  </h3>
+                  <div className="space-y-2">
+                    {categoryTasks.map((task) => {
+                      const isDrifted = task.config_drifted || task.version_changed;
+                      const isInstalled = task.status === "completed";
+                      const isRunning = runningTaskId === task.id;
+                      const affiliatedBlueprints = taskBlueprintMap.get(task.id) ?? [];
 
-                return (
-                  <Card key={task.id} padding={false} className="p-4">
-                    <div className="flex items-center gap-3">
-                      <TaskStatusIcon task={task} />
+                      return (
+                        <Card key={task.id} padding={false} className="p-4">
+                          <div className="flex items-center gap-3">
+                            <TaskStatusIcon task={task} />
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark truncate">
-                            {task.name}
-                          </span>
-                          <Badge variant={taskStatusBadgeVariant(task)}>
-                            {taskStatusLabel(task)}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark truncate mt-0.5">
-                          {task.description}
-                        </p>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark truncate">
+                                  {task.name}
+                                </span>
+                                <Badge variant={taskStatusBadgeVariant(task)}>
+                                  {taskStatusLabel(task)}
+                                </Badge>
+                                {affiliatedBlueprints.map((bp) => (
+                                  <span
+                                    key={bp.id}
+                                    className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800"
+                                  >
+                                    <Blocks size={10} />
+                                    {bp.name}
+                                  </span>
+                                ))}
+                              </div>
+                              <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark truncate mt-0.5">
+                                {task.description}
+                              </p>
 
-                        {/* Drift details */}
-                        <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                          {task.installed_at && (
-                            <span className="inline-flex items-center gap-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                              <Clock size={11} />
-                              Installed {formatDate(task.installed_at)}
-                            </span>
-                          )}
-                          {task.installed_version && (
-                            <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                              v{task.installed_version}
-                            </span>
-                          )}
-                          {task.config_drifted && (
-                            <span className="inline-flex items-center gap-1 text-xs text-yellow-600 dark:text-yellow-400">
-                              <AlertTriangle size={11} />
-                              Config drifted
-                            </span>
-                          )}
-                          {task.version_changed && (
-                            <span className="inline-flex items-center gap-1 text-xs text-yellow-600 dark:text-yellow-400">
-                              <AlertTriangle size={11} />
-                              Version changed
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                              {/* Drift / install details */}
+                              <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                                {task.installed_at && (
+                                  <span className="inline-flex items-center gap-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                                    <Clock size={11} />
+                                    Installed {formatDate(task.installed_at)}
+                                  </span>
+                                )}
+                                {task.installed_version && (
+                                  <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                                    v{task.installed_version}
+                                  </span>
+                                )}
+                                {task.config_drifted && (
+                                  <span className="inline-flex items-center gap-1 text-xs text-yellow-600 dark:text-yellow-400">
+                                    <AlertTriangle size={11} />
+                                    Config drifted
+                                  </span>
+                                )}
+                                {task.version_changed && (
+                                  <span className="inline-flex items-center gap-1 text-xs text-yellow-600 dark:text-yellow-400">
+                                    <AlertTriangle size={11} />
+                                    Version changed
+                                  </span>
+                                )}
+                              </div>
+                            </div>
 
-                      <Button
-                        variant={isDrifted || task.status === "failed" ? "primary" : "secondary"}
-                        size="sm"
-                        onClick={() => handleRunTask(task.id)}
-                        loading={isRunning}
-                        disabled={isRunning || syncingAll}
-                        className="shrink-0"
-                      >
-                        <Play size={12} />
-                        {isInstalled && !isDrifted ? "Re-run" : "Run Task"}
-                      </Button>
-                    </div>
-                  </Card>
-                );
-              })}
+                            <Button
+                              variant={isDrifted || task.status === "failed" ? "primary" : "secondary"}
+                              size="sm"
+                              onClick={() => handleRunTask(task.id)}
+                              loading={isRunning}
+                              disabled={isRunning || syncingAll}
+                              className="shrink-0"
+                            >
+                              <Play size={12} />
+                              {isInstalled && !isDrifted ? "Re-run" : "Run"}
+                            </Button>
+                          </div>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -731,6 +805,24 @@ export function NodeDetailPage() {
         loadingMessage={applyProgress ?? undefined}
         nodeId={nodeId}
       />
+      <RunTaskDialog
+        open={showRunTask}
+        onClose={() => setShowRunTask(false)}
+        onRun={handleRunTask}
+        tasks={allTasks}
+        taskStates={taskStates}
+        runningTaskId={runningTaskId}
+      />
+      {nodeId && (
+        <TaskExecutionDialog
+          open={showExecution}
+          onClose={() => setShowExecution(false)}
+          nodeId={nodeId}
+          taskId={executionTaskId}
+          taskName={executionTaskName}
+          isRunning={runningTaskId !== null}
+        />
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { Play, Settings2, ListChecks, Eye, CheckCircle2, SkipForward, Terminal, 
 import { Dialog } from "../ui/Dialog";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
+import { ExecutionOutputPanel } from "../ui/ExecutionOutputPanel";
 import * as api from "../../services/tauriCommands";
 import { formatError } from "../../lib/formatError";
 import type { Blueprint, BlueprintTaskEntry } from "../../types/blueprint";
@@ -78,7 +79,7 @@ export function PreRunConfigDialog({
   const skipped = dryRunResult?.task_actions.filter((t) => t.status === "skipped").length ?? 0;
 
   return (
-    <Dialog open={open} onClose={handleClose} title="Run Blueprint">
+    <Dialog open={open} onClose={handleClose} title="Run Blueprint" className={loading ? "max-w-3xl" : undefined}>
       {/* Blueprint header */}
       <div className="mb-4">
         <div className="flex items-center gap-2">
@@ -152,10 +153,18 @@ export function PreRunConfigDialog({
         </div>
       )}
 
-      {/* Loading message */}
+      {/* Loading message + real-time output */}
       {loading && loadingMessage && (
         <div className="mb-3 text-xs text-text-secondary-light dark:text-text-secondary-dark animate-pulse">
           {loadingMessage}
+        </div>
+      )}
+      {loading && nodeId && (
+        <div className="mb-3">
+          <ExecutionOutputPanel
+            nodeId={nodeId}
+            isActive={!!loading}
+          />
         </div>
       )}
 

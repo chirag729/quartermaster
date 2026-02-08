@@ -184,7 +184,7 @@ category: SDKs
 tags: [mobile, flutter]
 privilege: user
 target: any
-depends_on: [create-sdk-folder]
+depends_on: [create-development-folder]
 config:
   - key: channel
     label: Flutter Channel
@@ -212,7 +212,7 @@ steps:
         let def: TaskDefinition = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(def.id, "flutter-sdk");
         assert_eq!(def.tags, vec!["mobile", "flutter"]);
-        assert_eq!(def.depends_on, vec!["create-sdk-folder"]);
+        assert_eq!(def.depends_on, vec!["create-development-folder"]);
         assert_eq!(def.config.len(), 2);
         assert_eq!(def.config[0].field_type, "select");
         assert_eq!(def.config[0].options.as_ref().unwrap().len(), 3);

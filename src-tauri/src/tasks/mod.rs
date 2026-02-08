@@ -108,7 +108,22 @@ pub struct TaskInfo {
     pub update_available: bool,
 }
 
+/// Output from a single step within a task execution.
+/// Emitted to the frontend as a `task-output` event after each command completes.
+#[derive(Debug, Clone, Serialize)]
+pub struct StepOutput {
+    pub step_index: usize,
+    pub step_total: usize,
+    pub step_name: String,
+    pub command: String,
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: i32,
+    pub duration_ms: u64,
+}
+
 pub type ProgressCallback = Box<dyn Fn(f32, String) + Send + Sync>;
+pub type OutputCallback = Box<dyn Fn(StepOutput) + Send + Sync>;
 
 #[async_trait::async_trait]
 pub trait SetupTask: Send + Sync {
@@ -133,6 +148,7 @@ pub trait SetupTask: Send + Sync {
         config: &HashMap<String, Value>,
         exec: &dyn CommandExecutor,
         on_progress: &ProgressCallback,
+        on_output: Option<&OutputCallback>,
     ) -> Result<(), AppError>;
 
     /// Returns the currently installed version of this task's software, if detectable.
@@ -151,6 +167,7 @@ pub trait SetupTask: Send + Sync {
         _config: &HashMap<String, Value>,
         _exec: &dyn CommandExecutor,
         _on_progress: &ProgressCallback,
+        _on_output: Option<&OutputCallback>,
     ) -> Result<(), AppError> {
         Err(AppError::Task(format!(
             "Uninstall not supported for task '{}'",

@@ -11,7 +11,7 @@ use crate::executor::ssh::SshExecutor;
 use crate::fleet::NodeKind;
 use crate::tasks::execution_log::ExecutionLog;
 use crate::tasks::install_state;
-use crate::tasks::{ExecutionTarget, PrivilegeLevel, TaskInfo};
+use crate::tasks::{ExecutionTarget, OutputCallback, PrivilegeLevel, StepOutput, TaskInfo};
 use crate::state::AppState;
 
 /// Extended task info returned to the frontend, including installation state.
@@ -244,14 +244,41 @@ pub async fn execute_task(
         }));
     });
 
-    // Create execution log
-    let mut exec_log = ExecutionLog::new(&task_id, Some(&effective_node_id));
+    // Create execution log wrapped in Arc<Mutex> so the output callback can populate it
+    let exec_log = std::sync::Arc::new(std::sync::Mutex::new(
+        ExecutionLog::new(&task_id, Some(&effective_node_id)),
+    ));
 
-    let result = task.execute(&task_config, exec.as_ref(), &progress_cb).await;
+    // Output callback: emits task-output event and populates execution log
+    let app_for_output = app.clone();
+    let tid_for_output = task_id.clone();
+    let nid_for_output = effective_node_id.clone();
+    let log_for_output = exec_log.clone();
+    let output_cb: OutputCallback = Box::new(move |step: StepOutput| {
+        let _ = app_for_output.emit("task-output", serde_json::json!({
+            "node_id": nid_for_output,
+            "task_id": tid_for_output,
+            "step_index": step.step_index,
+            "step_total": step.step_total,
+            "step_name": step.step_name,
+            "command": step.command,
+            "stdout": step.stdout,
+            "stderr": step.stderr,
+            "exit_code": step.exit_code,
+            "duration_ms": step.duration_ms,
+        }));
+        if let Ok(mut log) = log_for_output.lock() {
+            log.add_step(&step.step_name, &step.stdout, &step.stderr, step.exit_code, step.duration_ms);
+        }
+    });
+
+    let result = task.execute(&task_config, exec.as_ref(), &progress_cb, Some(&output_cb)).await;
 
     // Finalize and save execution log (best-effort)
-    exec_log.finish(result.is_ok());
-    let _ = exec_log.save();
+    if let Ok(mut log) = exec_log.lock() {
+        log.finish(result.is_ok());
+        let _ = log.save();
+    }
 
     // Log the task execution result
     {
@@ -415,16 +442,43 @@ pub async fn uninstall_task(
         );
     });
 
-    // Create execution log for uninstall
-    let mut exec_log = ExecutionLog::new(&format!("{}_uninstall", task_id), Some(&effective_node_id));
+    // Create execution log for uninstall wrapped in Arc<Mutex>
+    let exec_log = std::sync::Arc::new(std::sync::Mutex::new(
+        ExecutionLog::new(&format!("{}_uninstall", task_id), Some(&effective_node_id)),
+    ));
+
+    // Output callback: emits task-output event and populates execution log
+    let app_for_output = app.clone();
+    let tid_for_output = task_id.clone();
+    let nid_for_output = effective_node_id.clone();
+    let log_for_output = exec_log.clone();
+    let output_cb: OutputCallback = Box::new(move |step: StepOutput| {
+        let _ = app_for_output.emit("task-output", serde_json::json!({
+            "node_id": nid_for_output,
+            "task_id": tid_for_output,
+            "step_index": step.step_index,
+            "step_total": step.step_total,
+            "step_name": step.step_name,
+            "command": step.command,
+            "stdout": step.stdout,
+            "stderr": step.stderr,
+            "exit_code": step.exit_code,
+            "duration_ms": step.duration_ms,
+        }));
+        if let Ok(mut log) = log_for_output.lock() {
+            log.add_step(&step.step_name, &step.stdout, &step.stderr, step.exit_code, step.duration_ms);
+        }
+    });
 
     let result = task
-        .uninstall(&task_config, exec.as_ref(), &progress_cb)
+        .uninstall(&task_config, exec.as_ref(), &progress_cb, Some(&output_cb))
         .await;
 
     // Finalize and save execution log (best-effort)
-    exec_log.finish(result.is_ok());
-    let _ = exec_log.save();
+    if let Ok(mut log) = exec_log.lock() {
+        log.finish(result.is_ok());
+        let _ = log.save();
+    }
 
     // Log the uninstall result
     {
