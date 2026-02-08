@@ -7,9 +7,10 @@ interface Props {
   executing: string | null;
   onExecute: (taskId: string) => void;
   readOnly?: boolean;
+  onCardClick?: (taskId: string) => void;
 }
 
-export function DashboardGrid({ tasks, executing, onExecute, readOnly }: Props) {
+export function DashboardGrid({ tasks, executing, onExecute, readOnly, onCardClick }: Props) {
   const categories = Array.from(new Set(tasks.map((t) => t.category)));
 
   return (
@@ -40,6 +41,7 @@ export function DashboardGrid({ tasks, executing, onExecute, readOnly }: Props) 
                       executing={executing === task.id}
                       onExecute={() => onExecute(task.id)}
                       readOnly={readOnly}
+                      onCardClick={onCardClick ? () => onCardClick(task.id) : undefined}
                     />
                   </motion.div>
                 ))}

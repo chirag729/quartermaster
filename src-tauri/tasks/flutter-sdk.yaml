@@ -36,12 +36,17 @@ steps:
       git clone --depth 1 --branch {{channel}} \
         https://github.com/flutter/flutter.git {{sdk_base_path}}/flutter
 
-  - name: Verify installation
-    progress: 90
+  - name: Add Flutter to PATH
+    progress: 80
     run: |
-      test -f {{sdk_base_path}}/flutter/bin/flutter
+      FLUTTER_BIN='export PATH="{{sdk_base_path}}/flutter/bin:$PATH"'
+      for rc in {{home}}/.bashrc {{home}}/.zshrc; do
+        [ -f "$rc" ] || continue
+        grep -qF '{{sdk_base_path}}/flutter/bin' "$rc" && continue
+        printf '\n# Flutter SDK\n%s\n' "$FLUTTER_BIN" >> "$rc"
+      done
 
-  - name: Flutter SDK installed
+  - name: Verify installation
     progress: 100
     run: |
-      echo "Flutter SDK installed successfully"
+      test -f {{sdk_base_path}}/flutter/bin/flutter

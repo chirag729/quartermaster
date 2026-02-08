@@ -12,6 +12,7 @@ interface Props {
   executing: boolean;
   onExecute: () => void;
   readOnly?: boolean;
+  onCardClick?: () => void;
 }
 
 function getIcon(iconName: string) {
@@ -19,14 +20,21 @@ function getIcon(iconName: string) {
   return icons[iconName] || Icons.Box;
 }
 
-export function ModuleCard({ task, executing, onExecute, readOnly }: Props) {
+export function ModuleCard({ task, executing, onExecute, readOnly, onCardClick }: Props) {
   const Icon = getIcon(task.icon);
   const isCompleted = task.status === "completed";
   const isRunning = task.status === "in_progress" || executing;
   const progress = task._progress ?? 0;
 
   return (
-    <Card className={clsx("group flex flex-col relative overflow-hidden", !readOnly && isCompleted && "ring-1 ring-green-200 dark:ring-green-900/50")}>
+    <Card
+      className={clsx(
+        "group flex flex-col relative overflow-hidden",
+        !readOnly && isCompleted && "ring-1 ring-green-200 dark:ring-green-900/50",
+        onCardClick && "cursor-pointer",
+      )}
+      onClick={onCardClick}
+    >
       {!readOnly && isRunning && progress > 0 && (
         <motion.div
           className="absolute bottom-0 left-0 h-1 rounded-full bg-warm-400"

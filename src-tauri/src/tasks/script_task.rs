@@ -5,7 +5,7 @@ use serde_json::Value;
 use super::yaml_schema::TaskDefinition;
 use super::{
     AppArmorInfo, ConfigField, DesktopInfo, DownloadInfo, ExecutionTarget, OutputCallback,
-    PrivilegeLevel, ProgressCallback, SetupTask, StepOutput, TaskStatus,
+    PrivilegeLevel, ProgressCallback, SetupTask, StepInfo, StepOutput, TaskStatus,
 };
 use crate::error::AppError;
 use crate::executor::CommandExecutor;
@@ -155,6 +155,20 @@ impl SetupTask for ScriptTask {
             profile: a.profile.clone(),
             abstractions: a.abstractions.clone(),
         })
+    }
+
+    fn steps(&self) -> Vec<StepInfo> {
+        self.definition.steps.iter().map(|s| StepInfo {
+            name: s.name.clone(),
+            progress: s.progress,
+        }).collect()
+    }
+
+    fn uninstall_steps(&self) -> Vec<StepInfo> {
+        self.definition.uninstall.iter().map(|s| StepInfo {
+            name: s.name.clone(),
+            progress: s.progress,
+        }).collect()
     }
 
     fn config_schema(&self) -> Vec<ConfigField> {
@@ -500,5 +514,54 @@ mod tests {
         def.target = "local_only".into();
         let task = ScriptTask::new(def);
         assert_eq!(task.execution_target(), ExecutionTarget::LocalOnly);
+    }
+
+    #[test]
+    fn step_info_metadata() {
+        let mut def = make_definition();
+        def.steps = vec![
+            StepDef { name: "Download".into(), progress: 30, run: "curl ...".into() },
+            StepDef { name: "Install".into(), progress: 80, run: "dpkg -i ...".into() },
+            StepDef { name: "Configure".into(), progress: 100, run: "echo done".into() },
+        ];
+        def.uninstall = vec![
+            StepDef { name: "Remove files".into(), progress: 50, run: "rm -rf ...".into() },
+            StepDef { name: "Clean config".into(), progress: 100, run: "rm ...".into() },
+        ];
+        let task = ScriptTask::new(def);
+
+        let steps = task.steps();
+        assert_eq!(steps.len(), 3);
+        assert_eq!(steps[0].name, "Download");
+        assert_eq!(steps[0].progress, 30);
+        assert_eq!(steps[2].name, "Configure");
+        assert_eq!(steps[2].progress, 100);
+
+        let uninstall = task.uninstall_steps();
+        assert_eq!(uninstall.len(), 2);
+        assert_eq!(uninstall[0].name, "Remove files");
+        assert_eq!(uninstall[1].progress, 100);
+    }
+
+    #[test]
+    fn to_info_includes_steps() {
+        use super::super::StepInfo;
+
+        let mut def = make_definition();
+        def.steps = vec![
+            StepDef { name: "Step A".into(), progress: 50, run: "echo a".into() },
+            StepDef { name: "Step B".into(), progress: 100, run: "echo b".into() },
+        ];
+        def.uninstall = vec![
+            StepDef { name: "Undo".into(), progress: 100, run: "echo undo".into() },
+        ];
+        let task = ScriptTask::new(def);
+        let info = task.to_info(TaskStatus::NotStarted, None);
+
+        assert_eq!(info.steps.len(), 2);
+        assert_eq!(info.steps[0].name, "Step A");
+        assert_eq!(info.steps[1].progress, 100);
+        assert_eq!(info.uninstall_steps.len(), 1);
+        assert_eq!(info.uninstall_steps[0].name, "Undo");
     }
 }

@@ -11,6 +11,28 @@ export interface ConfigField {
   required: boolean;
 }
 
+export interface StepInfo {
+  name: string;
+  progress: number;
+}
+
+export interface DownloadInfo {
+  url: string;
+  extract: string;
+  checksum_sha256?: string;
+}
+
+export interface DesktopInfo {
+  name: string;
+  exec: string;
+  categories: string[];
+}
+
+export interface AppArmorInfo {
+  profile: string;
+  abstractions: string[];
+}
+
 export interface TaskInfo {
   id: string;
   name: string;
@@ -27,6 +49,15 @@ export interface TaskInfo {
   supports_uninstall: boolean;
   installed_version?: string;
   update_available?: boolean;
+  // V2 fields
+  version?: string;
+  variables?: string[];
+  download?: DownloadInfo;
+  desktop?: DesktopInfo;
+  apparmor?: AppArmorInfo;
+  steps?: StepInfo[];
+  uninstall_steps?: StepInfo[];
+  // Frontend-only transient fields
   _progress?: number;
   _progressMessage?: string;
 }

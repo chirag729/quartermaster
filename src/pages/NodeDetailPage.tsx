@@ -525,7 +525,7 @@ export function NodeDetailPage() {
               <div className="space-y-3">
                 <div
                   className="flex items-center gap-3 p-3 rounded-lg border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark cursor-pointer hover:bg-warm-50 dark:hover:bg-warm-900/10 transition-colors"
-                  onClick={() => navigate(`/blueprints/${blueprint.id}`)}
+                  onClick={() => navigate(`/blueprints/${blueprint.id}?nodeId=${nodeId}`)}
                 >
                   <div className="p-2 rounded-lg bg-warm-100 dark:bg-warm-900/30 text-warm-600 dark:text-warm-400">
                     <Layers size={16} />

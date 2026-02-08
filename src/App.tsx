@@ -1,10 +1,11 @@
-import { HashRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { createHashRouter, RouterProvider, Outlet, Navigate, useLocation } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell";
 import { CommandPalette } from "./components/layout/CommandPalette";
 import { DashboardPage } from "./pages/DashboardPage";
 import { FleetPage } from "./pages/FleetPage";
 import { NodeDetailPage } from "./pages/NodeDetailPage";
 import { TaskLibraryPage } from "./pages/TaskLibraryPage";
+import { TaskDetailPage } from "./pages/TaskDetailPage";
 import { AppArmorPage } from "./pages/AppArmorPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { BlueprintsPage } from "./pages/BlueprintsPage";
@@ -14,7 +15,7 @@ import { useThemeStore } from "./stores/themeStore";
 import { useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 
-function AnimatedRoutes() {
+function AnimatedOutlet() {
   const location = useLocation();
 
   return (
@@ -27,22 +28,41 @@ function AnimatedRoutes() {
         transition={{ duration: 0.2 }}
       >
         <ErrorBoundary key={location.pathname}>
-          <Routes location={location}>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/fleet" element={<FleetPage />} />
-            <Route path="/fleet/:nodeId" element={<NodeDetailPage />} />
-            <Route path="/tasks" element={<TaskLibraryPage />} />
-            <Route path="/blueprints" element={<BlueprintsPage />} />
-            <Route path="/blueprints/:blueprintId" element={<BlueprintDetailPage />} />
-            <Route path="/apparmor" element={<AppArmorPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-          </Routes>
+          <Outlet />
         </ErrorBoundary>
       </motion.div>
     </AnimatePresence>
   );
 }
+
+function RootLayout() {
+  return (
+    <>
+      <AppShell>
+        <AnimatedOutlet />
+      </AppShell>
+      <CommandPalette />
+    </>
+  );
+}
+
+const router = createHashRouter([
+  {
+    element: <RootLayout />,
+    children: [
+      { index: true, element: <Navigate to="dashboard" replace /> },
+      { path: "dashboard", element: <DashboardPage /> },
+      { path: "fleet", element: <FleetPage /> },
+      { path: "fleet/:nodeId", element: <NodeDetailPage /> },
+      { path: "tasks", element: <TaskLibraryPage /> },
+      { path: "tasks/:taskId", element: <TaskDetailPage /> },
+      { path: "blueprints", element: <BlueprintsPage /> },
+      { path: "blueprints/:blueprintId", element: <BlueprintDetailPage /> },
+      { path: "apparmor", element: <AppArmorPage /> },
+      { path: "settings", element: <SettingsPage /> },
+    ],
+  },
+]);
 
 export default function App() {
   const { theme, resolvedTheme } = useThemeStore();
@@ -67,12 +87,5 @@ export default function App() {
     }
   }, [theme]);
 
-  return (
-    <HashRouter>
-      <AppShell>
-        <AnimatedRoutes />
-      </AppShell>
-      <CommandPalette />
-    </HashRouter>
-  );
+  return <RouterProvider router={router} />;
 }

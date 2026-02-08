@@ -34,9 +34,18 @@ steps:
       rm -f {{sdk_base_path}}/android/cmdline-tools.zip
 
   - name: Reorganize to cmdline-tools/latest structure
-    progress: 100
+    progress: 70
     run: |
       SDK_PATH={{sdk_base_path}}/android
       mv "$SDK_PATH/cmdline-tools" "$SDK_PATH/cmdline-tools-temp"
       mkdir -p "$SDK_PATH/cmdline-tools"
       mv "$SDK_PATH/cmdline-tools-temp" "$SDK_PATH/cmdline-tools/latest"
+
+  - name: Add Android SDK to PATH
+    progress: 100
+    run: |
+      for rc in {{home}}/.bashrc {{home}}/.zshrc; do
+        [ -f "$rc" ] || continue
+        grep -qF 'ANDROID_HOME' "$rc" && continue
+        printf '\n# Android SDK\nexport ANDROID_HOME="{{sdk_base_path}}/android"\nexport PATH="{{sdk_base_path}}/android/cmdline-tools/latest/bin:{{sdk_base_path}}/android/platform-tools:$PATH"\n' >> "$rc"
+      done

@@ -74,6 +74,13 @@ pub struct AppArmorInfo {
     pub abstractions: Vec<String>,
 }
 
+/// Metadata about a single installation/uninstall step (name + progress weight only; no shell commands).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StepInfo {
+    pub name: String,
+    pub progress: u8,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskInfo {
     pub id: String,
@@ -106,6 +113,10 @@ pub struct TaskInfo {
     pub installed_version: Option<String>,
     #[serde(default)]
     pub update_available: bool,
+    #[serde(default)]
+    pub steps: Vec<StepInfo>,
+    #[serde(default)]
+    pub uninstall_steps: Vec<StepInfo>,
 }
 
 /// Output from a single step within a task execution.
@@ -142,6 +153,8 @@ pub trait SetupTask: Send + Sync {
     fn download_info(&self) -> Option<DownloadInfo> { None }
     fn desktop_info(&self) -> Option<DesktopInfo> { None }
     fn apparmor_info(&self) -> Option<AppArmorInfo> { None }
+    fn steps(&self) -> Vec<StepInfo> { vec![] }
+    fn uninstall_steps(&self) -> Vec<StepInfo> { vec![] }
     async fn detect_state(&self, config: &HashMap<String, Value>, exec: &dyn CommandExecutor) -> TaskStatus;
     async fn execute(
         &self,
@@ -201,6 +214,8 @@ pub trait SetupTask: Send + Sync {
             supports_uninstall: self.supports_uninstall(),
             installed_version: None,
             update_available: false,
+            steps: self.steps(),
+            uninstall_steps: self.uninstall_steps(),
         }
     }
 }

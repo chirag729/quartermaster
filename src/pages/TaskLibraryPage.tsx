@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { DashboardGrid } from "../components/dashboard/DashboardGrid";
 import { RefreshCw } from "lucide-react";
 import { Button } from "../components/ui/Button";
@@ -13,6 +14,7 @@ import type { TaskInfo } from "../types/task";
 const ALL_CATEGORY = "All";
 
 export function TaskLibraryPage() {
+  const navigate = useNavigate();
   const [tasks, setTasks] = useState<TaskInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -132,7 +134,13 @@ export function TaskLibraryPage() {
           </p>
         </div>
       ) : (
-        <DashboardGrid tasks={filteredTasks} executing={null} onExecute={() => {}} readOnly />
+        <DashboardGrid
+          tasks={filteredTasks}
+          executing={null}
+          onExecute={() => {}}
+          readOnly
+          onCardClick={(taskId) => navigate(`/tasks/${taskId}`)}
+        />
       )}
     </div>
   );

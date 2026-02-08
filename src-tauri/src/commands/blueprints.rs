@@ -94,37 +94,39 @@ pub async fn update_blueprint(
     let resolved = state.registry.resolve_dependencies(&task_ids)
         .map_err(|e| AppError::Blueprint(e))?;
 
-    // Add any missing dependency tasks
+    // Add any missing dependency tasks, inserting each just before the
+    // first task that depends on it so the user's existing order is preserved.
     let existing_ids: std::collections::HashSet<String> = task_ids.into_iter().collect();
-    let max_order = updated.task_entries.iter().map(|e| e.order).max().unwrap_or(0);
-    let mut next_order = max_order + 1;
 
     for dep_id in &resolved {
         if !existing_ids.contains(dep_id) {
+            // Find the earliest position of a task that depends on this dep
+            let insert_order = updated
+                .task_entries
+                .iter()
+                .filter(|e| {
+                    state.registry.get(&e.task_id).map_or(false, |t| {
+                        t.depends_on().contains(&dep_id.to_string())
+                    })
+                })
+                .map(|e| e.order)
+                .min()
+                .unwrap_or(0);
+
+            // Shift all entries at or after insert_order up by 1
+            for entry in &mut updated.task_entries {
+                if entry.order >= insert_order {
+                    entry.order += 1;
+                }
+            }
+
             updated.task_entries.push(BlueprintTaskEntry {
                 task_id: dep_id.clone(),
                 enabled: true,
                 config_overrides: HashMap::new(),
-                order: next_order,
+                order: insert_order,
             });
-            next_order += 1;
         }
-    }
-
-    // Re-sort entries to match dependency order
-    let order_map: HashMap<&str, usize> = resolved
-        .iter()
-        .enumerate()
-        .map(|(i, id)| (id.as_str(), i))
-        .collect();
-
-    updated.task_entries.sort_by_key(|e| {
-        order_map.get(e.task_id.as_str()).copied().unwrap_or(usize::MAX)
-    });
-
-    // Reassign order values
-    for (i, entry) in updated.task_entries.iter_mut().enumerate() {
-        entry.order = i as u32;
     }
 
     // Single lock for version comparison + write (prevents TOCTOU)
