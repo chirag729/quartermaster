@@ -143,24 +143,29 @@ pub async fn update_blueprint(
 
     // Auto-bump version based on what changed
     if let Some(old) = manager.get_blueprint(&updated.id) {
-        let old_task_ids: Vec<&str> = old.task_entries.iter().map(|e| e.task_id.as_str()).collect();
-        let new_task_ids: Vec<&str> = updated.task_entries.iter().map(|e| e.task_id.as_str()).collect();
+        let mut old_ids: Vec<&str> = old.task_entries.iter().map(|e| e.task_id.as_str()).collect();
+        let mut new_ids: Vec<&str> = updated.task_entries.iter().map(|e| e.task_id.as_str()).collect();
+        old_ids.sort();
+        new_ids.sort();
 
-        if old_task_ids != new_task_ids {
+        if old_ids != new_ids {
             // Tasks added or removed: bump minor version
             updated.version = bump_version(&old.version, "minor");
         } else {
-            // Check if any config_overrides or enabled state changed
-            let configs_changed = old.task_entries.iter().zip(updated.task_entries.iter()).any(
-                |(old_entry, new_entry)| {
+            // Build maps keyed by task_id for stable comparison regardless of order
+            let old_map: HashMap<&str, &BlueprintTaskEntry> = old.task_entries.iter().map(|e| (e.task_id.as_str(), e)).collect();
+            let new_map: HashMap<&str, &BlueprintTaskEntry> = updated.task_entries.iter().map(|e| (e.task_id.as_str(), e)).collect();
+
+            let configs_changed = old_map.iter().any(|(id, old_entry)| {
+                new_map.get(id).map_or(false, |new_entry| {
                     old_entry.config_overrides != new_entry.config_overrides
                         || old_entry.enabled != new_entry.enabled
-                },
-            );
+                        || old_entry.order != new_entry.order
+                })
+            });
             if configs_changed {
                 updated.version = bump_version(&old.version, "patch");
             }
-            // If nothing changed, keep the same version
         }
     }
 
