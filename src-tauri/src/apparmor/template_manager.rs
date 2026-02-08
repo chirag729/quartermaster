@@ -747,4 +747,5 @@ mod tests {
         assert_eq!(info.variables.len(), 1);
         assert!(matches!(info.status, ProfileTemplateStatus::Installed));
     }
+
 }

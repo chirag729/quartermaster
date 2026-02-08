@@ -64,6 +64,11 @@ impl Vault {
         }
     }
 
+    /// Creates a Vault instance pointing to a custom path (for testing).
+    pub fn with_path(path: PathBuf) -> Self {
+        Self { key: None, data: None, path }
+    }
+
     fn vault_path() -> PathBuf {
         crate::dirs::vault_path()
     }

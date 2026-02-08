@@ -1,0 +1,20 @@
+id: codex-cli
+name: Codex CLI
+description: Install OpenAI Codex CLI via npm
+icon: Terminal
+category: Applications
+tags: [ai, cli]
+privilege: user
+target: any
+
+apparmor:
+  profile: codex-cli
+
+detect: |
+  command -v codex >/dev/null 2>&1 || npm list -g @openai/codex 2>/dev/null | grep -q codex
+
+steps:
+  - name: Install Codex CLI via npm
+    progress: 100
+    run: |
+      npm install -g @openai/codex

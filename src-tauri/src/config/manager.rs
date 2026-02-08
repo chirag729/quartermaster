@@ -102,6 +102,11 @@ impl Default for ConfigManager {
 }
 
 impl ConfigManager {
+    /// Creates a ConfigManager with a custom file path (for testing).
+    pub fn with_path(path: PathBuf) -> Self {
+        Self { data: ConfigData::default(), path }
+    }
+
     fn config_path() -> PathBuf {
         crate::dirs::config_dir().join("config.json")
     }

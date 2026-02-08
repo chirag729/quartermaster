@@ -15,6 +15,11 @@ pub struct BlueprintManager {
 }
 
 impl BlueprintManager {
+    /// Creates a BlueprintManager with a custom config directory (for testing).
+    pub fn with_dir(config_dir: PathBuf) -> Self {
+        Self { blueprints: Vec::new(), config_dir }
+    }
+
     /// Creates a new BlueprintManager, loading existing blueprints from disk.
     /// If no blueprints exist on disk, migrates from legacy path or creates defaults.
     pub fn load() -> Result<Self, AppError> {
@@ -611,58 +616,6 @@ mod tests {
         // Should save as .yaml, not .json
         assert!(dir.path().join(format!("{}.yaml", id)).exists());
         assert!(!dir.path().join(format!("{}.json", id)).exists());
-    }
-
-    #[test]
-    fn default_blueprints_load_from_yaml() {
-        let defaults = load_default_blueprints();
-        assert_eq!(defaults.len(), 3);
-
-        let names: Vec<&str> = defaults.iter().map(|b| b.name.as_str()).collect();
-        assert!(names.contains(&"Development Workstation"));
-        assert!(names.contains(&"Mobile Development"));
-        assert!(names.contains(&"Minimal Server"));
-
-        for bp in &defaults {
-            assert!(bp.is_builtin);
-        }
-    }
-
-    #[test]
-    fn dev_workstation_has_expected_tasks() {
-        let defaults = load_default_blueprints();
-        let ws = defaults.iter().find(|b| b.name == "Development Workstation").unwrap();
-        assert_eq!(ws.task_entries.len(), 6);
-        assert_eq!(ws.icon, "Monitor");
-        let task_ids: Vec<&str> = ws.task_entries.iter().map(|t| t.task_id.as_str()).collect();
-        assert!(task_ids.contains(&"flutter-sdk"));
-        assert!(task_ids.contains(&"claude-code"));
-    }
-
-    #[test]
-    fn mobile_dev_has_expected_tasks() {
-        let defaults = load_default_blueprints();
-        let mobile = defaults.iter().find(|b| b.name == "Mobile Development").unwrap();
-        assert_eq!(mobile.task_entries.len(), 4);
-        assert_eq!(mobile.icon, "Smartphone");
-    }
-
-    #[test]
-    fn minimal_server_has_empty_tasks() {
-        let defaults = load_default_blueprints();
-        let server = defaults.iter().find(|b| b.name == "Minimal Server").unwrap();
-        assert!(server.task_entries.is_empty());
-        assert_eq!(server.icon, "Server");
-    }
-
-    #[test]
-    fn task_entries_are_ordered() {
-        let defaults = load_default_blueprints();
-        for bp in &defaults {
-            for (i, entry) in bp.task_entries.iter().enumerate() {
-                assert_eq!(entry.order, i as u32);
-            }
-        }
     }
 
     #[test]

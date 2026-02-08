@@ -12,6 +12,11 @@ pub struct FleetManager {
 }
 
 impl FleetManager {
+    /// Creates a FleetManager with a custom config directory (for testing).
+    pub fn with_dir(config_dir: PathBuf) -> Self {
+        Self { nodes: Vec::new(), config_dir }
+    }
+
     /// Creates a new FleetManager, loading existing nodes from disk.
     /// If no local node exists, auto-creates one representing this machine.
     /// Migrates from legacy ~/.config/machine-setup/nodes/ if the new path is empty.
