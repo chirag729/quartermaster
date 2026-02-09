@@ -50,6 +50,16 @@ pub fn notify_bulk_complete(
         .show();
 }
 
+/// Send a notification for a blueprint uninstall completion.
+pub fn notify_blueprint_uninstalled(app: &AppHandle, blueprint_name: &str, node_name: &str) {
+    let _ = app
+        .notification()
+        .builder()
+        .title("Blueprint Uninstalled")
+        .body(format!("{} uninstalled from {}", blueprint_name, node_name))
+        .show();
+}
+
 /// Send an error notification.
 pub fn notify_error(app: &AppHandle, title: &str, message: &str) {
     let _ = app

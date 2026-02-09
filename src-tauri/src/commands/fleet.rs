@@ -208,7 +208,9 @@ pub async fn poll_all_node_statuses(
             }
         }
     }
-    manager.save()?;
+    if let Err(e) = manager.save() {
+        eprintln!("Warning: Failed to persist node status updates: {}", e);
+    }
 
     results.extend(remote_results);
     Ok(results)

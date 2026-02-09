@@ -117,18 +117,8 @@ pub fn validate_profile_template(template: &ProfileTemplate) -> Vec<String> {
         }
     }
 
-    // Validate template variables in content reference known keys
-    let known_keys: HashSet<&str> = {
-        let mut keys = HashSet::new();
-        keys.insert("home");
-        keys.insert("mode");
-        for var in &template.variables {
-            keys.insert(&var.key);
-        }
-        keys
-    };
-
-    // Extract {{var}} references from content
+    // Extract {{var}} references from content and check for unused variables
+    let mut referenced_keys: HashSet<&str> = HashSet::new();
     let mut i = 0;
     let content_bytes = template.content.as_bytes();
     while i + 3 < content_bytes.len() {
@@ -136,11 +126,8 @@ pub fn validate_profile_template(template: &ProfileTemplate) -> Vec<String> {
             if let Some(end) = template.content[i + 2..].find("}}") {
                 let var_name = &template.content[i + 2..i + 2 + end];
                 let var_name = var_name.trim();
-                if !var_name.is_empty() && !known_keys.contains(var_name) {
-                    // This might be a task config key — we note it but don't error
-                    // because task config keys are validated at load time
-                    // We collect them for informational purposes but only warn
-                    // if the key is clearly not valid
+                if !var_name.is_empty() {
+                    referenced_keys.insert(var_name);
                 }
                 i = i + 2 + end + 2;
             } else {
@@ -148,6 +135,16 @@ pub fn validate_profile_template(template: &ProfileTemplate) -> Vec<String> {
             }
         } else {
             i += 1;
+        }
+    }
+
+    // Warn about declared variables never referenced in content
+    for var in &template.variables {
+        if !var.key.is_empty() && !referenced_keys.contains(var.key.as_str()) {
+            errors.push(format!(
+                "variable '{}' is declared but never referenced in template content",
+                var.key
+            ));
         }
     }
 
@@ -416,6 +413,7 @@ mod tests {
     #[test]
     fn validate_select_with_options_passes() {
         let mut template = make_minimal_template();
+        template.content = "profile test flags=({{mode}}) { {{test_key}} }".into();
         template.variables = vec![ProfileVariable {
             key: "test_key".into(),
             label: "Test".into(),

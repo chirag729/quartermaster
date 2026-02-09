@@ -24,6 +24,18 @@ pub async fn start_monitoring(
     let app_clone = app.clone();
 
     tokio::spawn(async move {
+        // Ensure the running flag is always reset when this task exits
+        struct ResetGuard(Arc<Mutex<bool>>);
+        impl Drop for ResetGuard {
+            fn drop(&mut self) {
+                // Use try_lock to avoid blocking in Drop (panic context)
+                if let Ok(mut guard) = self.0.try_lock() {
+                    *guard = false;
+                }
+            }
+        }
+        let _guard = ResetGuard(running_clone.clone());
+
         let audit_path = "/var/log/audit/audit.log";
 
         if !std::path::Path::new(audit_path).exists() {
@@ -92,9 +104,11 @@ pub async fn start_monitoring(
                 if let Ok(Some((denial_lines, new_size))) = read_result {
                     for line in &denial_lines {
                         if let Some(denial) = parse_denial_line(line) {
-                            let _ = app_clone.emit("apparmor-denial", serde_json::json!({
+                            if let Err(e) = app_clone.emit("apparmor-denial", serde_json::json!({
                                 "denial": denial,
-                            }));
+                            })) {
+                                eprintln!("Warning: Failed to emit apparmor-denial event: {}", e);
+                            }
                         }
                     }
                     *size = new_size;
@@ -143,9 +157,11 @@ async fn monitor_via_journalctl(app: AppHandle, running: Arc<Mutex<bool>>) {
                     Ok(Some(line)) => {
                         if line.contains("DENIED") {
                             if let Some(denial) = parse_denial_line(&line) {
-                                let _ = app.emit("apparmor-denial", serde_json::json!({
+                                if let Err(e) = app.emit("apparmor-denial", serde_json::json!({
                                     "denial": denial,
-                                }));
+                                })) {
+                                    eprintln!("Warning: Failed to emit apparmor-denial event: {}", e);
+                                }
                             }
                         }
                     }

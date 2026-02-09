@@ -313,8 +313,6 @@ pub async fn set_profile_template_config(
             .insert(template_id.clone(), profile_config_values);
     }
 
-    config.save()?;
-
     // If the profile is installed, re-install to apply changes
     if config.data.installed_profiles.contains_key(&template_id) {
         ProfileTemplateManager::install_profile(
@@ -325,6 +323,8 @@ pub async fn set_profile_template_config(
         )
         .await?;
     }
+
+    config.save()?;
 
     Ok(())
 }

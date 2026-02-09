@@ -29,7 +29,7 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
       onClose={onClose}
       onClick={(e) => { if (e.target === dialogRef.current) onClose(); }}
       className={clsx(
-        "backdrop:bg-black/50 backdrop:backdrop-blur-sm bg-card-light dark:bg-card-dark rounded-xl border border-border-light dark:border-border-dark shadow-xl p-0 max-w-lg w-full",
+        "backdrop:bg-black/50 backdrop:backdrop-blur-sm bg-card-light dark:bg-card-dark rounded-xl border border-border-light dark:border-border-dark shadow-xl p-0 max-w-lg w-full m-auto",
         className,
       )}
     >

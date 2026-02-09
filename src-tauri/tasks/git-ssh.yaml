@@ -56,3 +56,19 @@ steps:
         fi
         ssh-keygen -t ed25519 -C "$COMMENT" -f "$KEY_PATH" -N ""
       fi
+
+uninstall:
+  - name: Remove SSH key pair
+    progress: 30
+    run: |
+      rm -f {{home}}/.ssh/id_ed25519 {{home}}/.ssh/id_ed25519.pub
+
+  - name: Unset git global user.name
+    progress: 60
+    run: |
+      git config --global --unset user.name || true
+
+  - name: Unset git global user.email
+    progress: 100
+    run: |
+      git config --global --unset user.email || true

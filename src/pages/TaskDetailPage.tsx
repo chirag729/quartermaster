@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Shield, Globe, Link2, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Shield, Globe, Link2, Trash2, type LucideIcon } from "lucide-react";
 import * as Icons from "lucide-react";
 import { Card, CardHeader, CardTitle } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
@@ -8,6 +8,8 @@ import { Button } from "../components/ui/Button";
 import { Skeleton } from "../components/ui/Skeleton";
 import { StatusIndicator } from "../components/layout/StatusIndicator";
 import { useToastStore } from "../stores/toastStore";
+import { useTaskStore } from "../stores/taskStore";
+import { useTauriEvent } from "../hooks/useTauriEvent";
 import { formatError } from "../lib/formatError";
 import * as api from "../services/tauriCommands";
 import type { TaskInfo } from "../types/task";
@@ -27,10 +29,13 @@ export function TaskDetailPage() {
   const { taskId } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
   const { addToast } = useToastStore();
+  const { uninstalling, setUninstalling } = useTaskStore();
   const [task, setTask] = useState<TaskInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [confirmUninstall, setConfirmUninstall] = useState(false);
+  const [uninstallProgress, setUninstallProgress] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadTask = () => {
     if (!taskId) return;
     setLoading(true);
     api.listTasks()
@@ -42,7 +47,42 @@ export function TaskDetailPage() {
         addToast({ type: "error", title: "Failed to load task", message: formatError(err) });
       })
       .finally(() => setLoading(false));
-  }, [taskId, addToast]);
+  };
+
+  useEffect(() => {
+    loadTask();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskId]);
+
+  // Listen for task progress during uninstall
+  useTauriEvent<{ task_id: string; progress: number; message: string }>(
+    "task-progress",
+    (payload) => {
+      if (payload.task_id === taskId && uninstalling === taskId) {
+        setUninstallProgress(payload.message);
+      }
+    },
+  );
+
+  const handleUninstall = async () => {
+    if (!taskId) return;
+    setConfirmUninstall(false);
+    setUninstalling(taskId);
+    setUninstallProgress("Starting uninstall...");
+    try {
+      await api.uninstallTask(taskId);
+      addToast({ type: "success", title: "Task uninstalled", message: `${task?.name ?? taskId} has been uninstalled.` });
+      loadTask();
+    } catch (err) {
+      addToast({ type: "error", title: "Uninstall failed", message: formatError(err) });
+    } finally {
+      setUninstalling(null);
+      setUninstallProgress(null);
+    }
+  };
+
+  const isInstalled = task?.status === "completed";
+  const canUninstall = task?.supports_uninstall && isInstalled && uninstalling !== taskId;
 
   if (loading) {
     return (
@@ -354,6 +394,49 @@ export function TaskDetailPage() {
                 </span>
               </div>
             </div>
+
+            {/* Uninstall action */}
+            {task.supports_uninstall && (
+              <div className="pt-3 border-t border-border-light dark:border-border-dark">
+                {uninstalling === task.id ? (
+                  <div className="space-y-2">
+                    <Button variant="danger" size="sm" className="w-full" disabled>
+                      Uninstalling...
+                    </Button>
+                    {uninstallProgress && (
+                      <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark text-center">
+                        {uninstallProgress}
+                      </p>
+                    )}
+                  </div>
+                ) : confirmUninstall ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                      This will reverse the installation and remove all files added by this task.
+                    </p>
+                    <div className="flex gap-2">
+                      <Button variant="danger" size="sm" className="flex-1" onClick={handleUninstall}>
+                        Confirm
+                      </Button>
+                      <Button variant="ghost" size="sm" className="flex-1" onClick={() => setConfirmUninstall(false)}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    className="w-full"
+                    disabled={!canUninstall}
+                    onClick={() => setConfirmUninstall(true)}
+                  >
+                    <Trash2 size={14} />
+                    {isInstalled ? "Uninstall" : "Not installed"}
+                  </Button>
+                )}
+              </div>
+            )}
           </Card>
 
           {/* Dependencies */}

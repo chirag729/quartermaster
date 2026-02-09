@@ -545,8 +545,6 @@ mod tests {
 
     #[test]
     fn to_info_includes_steps() {
-        use super::super::StepInfo;
-
         let mut def = make_definition();
         def.steps = vec![
             StepDef { name: "Step A".into(), progress: 50, run: "echo a".into() },
@@ -563,5 +561,264 @@ mod tests {
         assert_eq!(info.steps[1].progress, 100);
         assert_eq!(info.uninstall_steps.len(), 1);
         assert_eq!(info.uninstall_steps[0].name, "Undo");
+    }
+
+    // ── Mock executor for async tests ─────────────────────────────────
+
+    use std::sync::{Arc, Mutex as StdMutex};
+
+    /// Records commands that were executed and returns configurable results.
+    struct MockExecutor {
+        home: String,
+        /// Each call to run_command consumes the next result from this queue.
+        /// If empty, returns success (exit code 0).
+        results: StdMutex<Vec<crate::executor::CommandOutput>>,
+        /// Records all commands that were executed.
+        commands: StdMutex<Vec<(String, Vec<String>)>>,
+    }
+
+    impl MockExecutor {
+        fn new() -> Self {
+            Self {
+                home: "/home/testuser".into(),
+                results: StdMutex::new(vec![]),
+                commands: StdMutex::new(vec![]),
+            }
+        }
+
+        fn with_results(results: Vec<crate::executor::CommandOutput>) -> Self {
+            Self {
+                home: "/home/testuser".into(),
+                results: StdMutex::new(results),
+                commands: StdMutex::new(vec![]),
+            }
+        }
+
+        fn executed_commands(&self) -> Vec<(String, Vec<String>)> {
+            self.commands.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::executor::CommandExecutor for MockExecutor {
+        async fn run_command(&self, cmd: &str, args: &[&str]) -> Result<crate::executor::CommandOutput, AppError> {
+            self.commands.lock().unwrap().push((
+                cmd.to_string(),
+                args.iter().map(|a| a.to_string()).collect(),
+            ));
+            let mut results = self.results.lock().unwrap();
+            if results.is_empty() {
+                Ok(crate::executor::CommandOutput {
+                    status: 0,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                })
+            } else {
+                Ok(results.remove(0))
+            }
+        }
+
+        async fn file_exists(&self, _path: &str) -> Result<bool, AppError> {
+            Ok(false)
+        }
+
+        async fn read_file(&self, _path: &str) -> Result<String, AppError> {
+            Ok(String::new())
+        }
+
+        async fn write_file(&self, _path: &str, _content: &str) -> Result<(), AppError> {
+            Ok(())
+        }
+
+        async fn create_dir_all(&self, _path: &str) -> Result<(), AppError> {
+            Ok(())
+        }
+
+        fn home_dir(&self) -> String {
+            self.home.clone()
+        }
+
+        fn is_local(&self) -> bool {
+            true
+        }
+    }
+
+    fn make_uninstallable_definition() -> TaskDefinition {
+        let mut def = make_definition();
+        def.uninstall = vec![
+            StepDef { name: "Remove files".into(), progress: 50, run: "rm -rf {{path}}".into() },
+            StepDef { name: "Clean config".into(), progress: 100, run: "rm ~/.config/test".into() },
+        ];
+        def
+    }
+
+    // ── Async uninstall tests ─────────────────────────────────────────
+
+    #[tokio::test]
+    async fn uninstall_succeeds_with_all_steps_passing() {
+        let def = make_uninstallable_definition();
+        let task = ScriptTask::new(def);
+        let exec = MockExecutor::new();
+
+        let progress_messages = Arc::new(StdMutex::new(vec![]));
+        let pm = progress_messages.clone();
+        let progress_cb: ProgressCallback = Box::new(move |p, msg| {
+            pm.lock().unwrap().push((p, msg));
+        });
+
+        let result = task.uninstall(&HashMap::new(), &exec, &progress_cb, None).await;
+        assert!(result.is_ok(), "Uninstall should succeed: {:?}", result);
+
+        // Verify both steps were executed
+        let cmds = exec.executed_commands();
+        assert_eq!(cmds.len(), 2, "Should execute 2 uninstall commands");
+        assert_eq!(cmds[0].0, "sh");
+        assert_eq!(cmds[1].0, "sh");
+
+        // Verify progress callbacks were called
+        let messages = progress_messages.lock().unwrap();
+        assert!(messages.len() >= 3, "Should have at least 3 progress calls (2 steps + completion)");
+        // Last progress should be 1.0 with "Uninstall completed"
+        let last = messages.last().unwrap();
+        assert_eq!(last.0, 1.0);
+        assert_eq!(last.1, "Uninstall completed");
+    }
+
+    #[tokio::test]
+    async fn uninstall_fails_on_nonzero_exit_code() {
+        let def = make_uninstallable_definition();
+        let task = ScriptTask::new(def);
+        let exec = MockExecutor::with_results(vec![
+            // First step succeeds
+            crate::executor::CommandOutput { status: 0, stdout: String::new(), stderr: String::new() },
+            // Second step fails
+            crate::executor::CommandOutput { status: 1, stdout: String::new(), stderr: "permission denied".into() },
+        ]);
+
+        let progress_cb: ProgressCallback = Box::new(|_, _| {});
+        let result = task.uninstall(&HashMap::new(), &exec, &progress_cb, None).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Uninstall step 2 of 2 failed"), "Error should mention step 2: {}", err);
+        assert!(err.contains("permission denied"), "Error should include stderr: {}", err);
+    }
+
+    #[tokio::test]
+    async fn uninstall_returns_error_when_no_steps() {
+        let def = make_definition(); // no uninstall steps
+        let task = ScriptTask::new(def);
+        let exec = MockExecutor::new();
+
+        let progress_cb: ProgressCallback = Box::new(|_, _| {});
+        let result = task.uninstall(&HashMap::new(), &exec, &progress_cb, None).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Uninstall not supported"), "Error should say not supported: {}", err);
+
+        // No commands should have been executed
+        assert!(exec.executed_commands().is_empty());
+    }
+
+    #[tokio::test]
+    async fn uninstall_expands_config_variables_in_scripts() {
+        let mut def = make_definition();
+        def.uninstall = vec![
+            StepDef { name: "Remove".into(), progress: 100, run: "rm -rf {{path}}".into() },
+        ];
+        let task = ScriptTask::new(def);
+
+        let mut config = HashMap::new();
+        config.insert("path".to_string(), serde_json::json!("~/custom"));
+
+        let exec = MockExecutor::new();
+        let progress_cb: ProgressCallback = Box::new(|_, _| {});
+        let result = task.uninstall(&config, &exec, &progress_cb, None).await;
+        assert!(result.is_ok());
+
+        let cmds = exec.executed_commands();
+        assert_eq!(cmds.len(), 1);
+        // The script should have the expanded and shell-escaped path
+        let script = &cmds[0].1[1]; // args[1] is the script passed to sh -c
+        assert!(
+            script.contains("/home/testuser/custom"),
+            "Script should contain expanded path: {}",
+            script
+        );
+        // Should NOT contain the raw template variable
+        assert!(
+            !script.contains("{{path}}"),
+            "Script should not contain raw template variable: {}",
+            script
+        );
+    }
+
+    #[tokio::test]
+    async fn uninstall_invokes_output_callback_for_each_step() {
+        let def = make_uninstallable_definition();
+        let task = ScriptTask::new(def);
+        let exec = MockExecutor::new();
+
+        let progress_cb: ProgressCallback = Box::new(|_, _| {});
+
+        let outputs = Arc::new(StdMutex::new(vec![]));
+        let outputs_clone = outputs.clone();
+        let output_cb: OutputCallback = Box::new(move |step| {
+            outputs_clone.lock().unwrap().push((
+                step.step_index,
+                step.step_total,
+                step.step_name.clone(),
+                step.exit_code,
+            ));
+        });
+
+        let result = task.uninstall(&HashMap::new(), &exec, &progress_cb, Some(&output_cb)).await;
+        assert!(result.is_ok());
+
+        let recorded = outputs.lock().unwrap();
+        assert_eq!(recorded.len(), 2, "Should have output for 2 steps");
+        assert_eq!(recorded[0].0, 0); // step_index
+        assert_eq!(recorded[0].1, 2); // step_total
+        assert_eq!(recorded[0].2, "Remove files");
+        assert_eq!(recorded[0].3, 0); // exit_code
+        assert_eq!(recorded[1].0, 1);
+        assert_eq!(recorded[1].2, "Clean config");
+    }
+
+    #[tokio::test]
+    async fn uninstall_stops_at_first_failure() {
+        let mut def = make_definition();
+        def.uninstall = vec![
+            StepDef { name: "Step 1".into(), progress: 33, run: "echo step1".into() },
+            StepDef { name: "Step 2 (fails)".into(), progress: 66, run: "bad-cmd".into() },
+            StepDef { name: "Step 3 (never runs)".into(), progress: 100, run: "echo step3".into() },
+        ];
+        let task = ScriptTask::new(def);
+        let exec = MockExecutor::with_results(vec![
+            crate::executor::CommandOutput { status: 0, stdout: "ok".into(), stderr: String::new() },
+            crate::executor::CommandOutput { status: 127, stdout: String::new(), stderr: "command not found".into() },
+            // Step 3 would succeed but should never be reached
+            crate::executor::CommandOutput { status: 0, stdout: "ok".into(), stderr: String::new() },
+        ]);
+
+        let progress_cb: ProgressCallback = Box::new(|_, _| {});
+        let result = task.uninstall(&HashMap::new(), &exec, &progress_cb, None).await;
+
+        assert!(result.is_err());
+        // Only 2 commands should have been executed (stops at failure)
+        assert_eq!(exec.executed_commands().len(), 2);
+    }
+
+    #[test]
+    fn supports_uninstall_false_without_steps() {
+        let task = ScriptTask::new(make_definition());
+        assert!(!task.supports_uninstall());
+    }
+
+    #[test]
+    fn supports_uninstall_true_with_steps() {
+        let task = ScriptTask::new(make_uninstallable_definition());
+        assert!(task.supports_uninstall());
     }
 }

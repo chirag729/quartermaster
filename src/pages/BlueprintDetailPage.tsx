@@ -2,8 +2,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate, useSearchParams, useBlocker } from "react-router-dom";
 import {
   ArrowLeft, Layers, ListChecks, Shield, Settings, Server, Monitor, Copy,
-  Trash2, Download, GitBranch, Plus, X, Play, CheckCircle2, AlertTriangle,
-  XCircle, Circle, ChevronUp, ChevronDown, Save, type LucideIcon,
+  Trash2, Download, GitBranch, Plus, Play, CheckCircle2, AlertTriangle,
+  XCircle, Circle, ChevronUp, ChevronDown, Save, Undo2, PackageMinus, type LucideIcon,
 } from "lucide-react";
 import { useToastStore } from "../stores/toastStore";
 import { formatError } from "../lib/formatError";
@@ -12,12 +12,15 @@ import { useTauriEvent } from "../hooks/useTauriEvent";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardHeader, CardTitle, CardDescription } from "../components/ui/Card";
+import { Dialog } from "../components/ui/Dialog";
 import { Skeleton } from "../components/ui/Skeleton";
 import { Toggle } from "../components/ui/Toggle";
 import { TaskConfigEditor } from "../components/blueprints/TaskConfigEditor";
 import { AddTaskDialog } from "../components/blueprints/AddTaskDialog";
 import { PreRunConfigDialog } from "../components/blueprints/PreRunConfigDialog";
 import * as api from "../services/tauriCommands";
+import { getInstallChain, getUninstallChain } from "../lib/taskDependencies";
+import { TaskActionConfirmDialog } from "../components/blueprints/TaskActionConfirmDialog";
 import type { Blueprint, BlueprintTaskEntry } from "../types/blueprint";
 import type { TaskInfo, TaskStateInfo } from "../types/task";
 import * as TaskIcons from "lucide-react";
@@ -37,13 +40,13 @@ function getTaskIcon(iconName: string) {
 }
 
 function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const d = new Date(dateStr);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
 }
 
 type TaskStatusBadgeVariant = "success" | "warning" | "danger" | "default";
@@ -104,6 +107,30 @@ export function BlueprintDetailPage() {
   const [applyingBlueprint, setApplyingBlueprint] = useState(false);
   const [applyProgress, setApplyProgress] = useState<string | null>(null);
 
+  // Uninstall blueprint state
+  const [confirmUninstall, setConfirmUninstall] = useState(false);
+  const [uninstallingBlueprint, setUninstallingBlueprint] = useState(false);
+  const [uninstallProgress, setUninstallProgress] = useState<string | null>(null);
+
+  // Per-task install/uninstall state
+  const [taskAction, setTaskAction] = useState<{
+    action: "install" | "uninstall";
+    taskChain: string[];
+  } | null>(null);
+
+  // Per-task config expansion and remove confirmation
+  const [expandedConfigs, setExpandedConfigs] = useState<Set<string>>(new Set());
+  const [confirmRemoveTaskId, setConfirmRemoveTaskId] = useState<string | null>(null);
+
+  const toggleConfig = (taskId: string) => {
+    setExpandedConfigs((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  };
+
   const isDirty = pendingEntries !== null;
   const backPath = nodeId ? `/fleet/${nodeId}` : "/blueprints";
   const backLabel = nodeId ? "Back to Node" : "Back to Blueprints";
@@ -147,7 +174,8 @@ export function BlueprintDetailPage() {
 
   // ── Blueprint apply event listeners ─────────────────────────────────
 
-  useTauriEvent<{ warning: string }>("blueprint-task-warning", (payload) => {
+  useTauriEvent<{ node_id: string; blueprint_id: string; warning: string }>("blueprint-task-warning", (payload) => {
+    if (payload.blueprint_id !== blueprintId) return;
     addToast({ type: "warning", title: "Task skipped", message: payload.warning });
   });
 
@@ -165,6 +193,24 @@ export function BlueprintDetailPage() {
     (payload) => {
       if (nodeId && payload.node_id === nodeId) {
         setApplyProgress(null);
+      }
+    },
+  );
+
+  useTauriEvent<{ node_id: string; blueprint_id: string; completed: number; total: number; current_task_id: string }>(
+    "blueprint-uninstall-progress",
+    (payload) => {
+      if (nodeId && payload.node_id === nodeId) {
+        setUninstallProgress(`Uninstalling task ${payload.completed + 1} of ${payload.total}`);
+      }
+    },
+  );
+
+  useTauriEvent<{ blueprint_id: string; node_id: string; uninstalled: number; skipped: number }>(
+    "blueprint-uninstall-complete",
+    (payload) => {
+      if (nodeId && payload.node_id === nodeId) {
+        setUninstallProgress(null);
       }
     },
   );
@@ -221,8 +267,10 @@ export function BlueprintDetailPage() {
         }
         setTaskStateMap(stateMap);
       }
-    }).catch(() => {});
-  }, [nodeId]);
+    }).catch((e) => {
+      addToast({ type: "error", title: "Failed to load tasks", message: String(e) });
+    });
+  }, [nodeId, addToast]);
 
   // When nodeId is present, load per-node task states
   const loadTaskStates = useCallback(async () => {
@@ -310,6 +358,7 @@ export function BlueprintDetailPage() {
   };
 
   const handleRemoveTask = (taskId: string) => {
+    setConfirmRemoveTaskId(null);
     const entries = currentEntries();
     setPendingEntries(entries.filter((e) => e.task_id !== taskId));
     const taskName = taskInfoMap[taskId]?.name ?? taskId;
@@ -403,6 +452,46 @@ export function BlueprintDetailPage() {
       setApplyingBlueprint(false);
     }
   };
+
+  // ── Uninstall blueprint (node context only) ────────────────────────
+
+  const handleUninstallBlueprint = async () => {
+    if (!nodeId || !blueprintId) return;
+    setConfirmUninstall(false);
+    setUninstallingBlueprint(true);
+    try {
+      await api.uninstallBlueprint(nodeId, blueprintId);
+      addToast({ type: "success", title: "Blueprint uninstalled" });
+      await loadTaskStates();
+    } catch (err) {
+      addToast({ type: "error", title: "Uninstall failed", message: formatError(err) });
+    } finally {
+      setUninstallingBlueprint(false);
+    }
+  };
+
+  // ── Per-task install / uninstall ─────────────────────────────────────
+
+  const handleTaskInstall = (taskId: string) => {
+    const entries = currentEntries();
+    const chain = getInstallChain(taskId, taskInfoMap, taskStateMap, entries);
+    setTaskAction({ action: "install", taskChain: chain });
+  };
+
+  const handleTaskUninstall = (taskId: string) => {
+    const entries = currentEntries();
+    const chain = getUninstallChain(taskId, taskInfoMap, taskStateMap, entries);
+    setTaskAction({ action: "uninstall", taskChain: chain });
+  };
+
+  const handleTaskActionClose = (refreshStates: boolean) => {
+    setTaskAction(null);
+    if (refreshStates) {
+      loadTaskStates();
+    }
+  };
+
+  const isExecutingTask = taskAction?.action !== undefined && taskAction !== null;
 
   // ── Loading skeleton ────────────────────────────────────────────────
 
@@ -597,21 +686,64 @@ export function BlueprintDetailPage() {
                       <div className="flex items-center gap-2 shrink-0">
                         {taskInfo?.category && <Badge>{taskInfo.category}</Badge>}
                         {taskInfo?.privilege_level === "admin" && <Badge variant="warning">Admin</Badge>}
+                        {/* Action icons: install/uninstall, config, delete */}
+                        <div className="flex items-center gap-0.5">
+                          {nodeId && hasStatus && entry.enabled && (
+                            <>
+                              {(status === "not_started" || status === "failed") && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleTaskInstall(entry.task_id)}
+                                  disabled={isExecutingTask || applyingBlueprint || uninstallingBlueprint}
+                                  className="p-1 rounded-md hover:bg-green-100 dark:hover:bg-green-900/20 text-text-secondary-light dark:text-text-secondary-dark hover:text-green-600 dark:hover:text-green-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                  title="Install task"
+                                >
+                                  <Play size={14} />
+                                </button>
+                              )}
+                              {status === "completed" && taskInfo?.supports_uninstall && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleTaskUninstall(entry.task_id)}
+                                  disabled={isExecutingTask || applyingBlueprint || uninstallingBlueprint}
+                                  className="p-1 rounded-md hover:bg-red-100 dark:hover:bg-red-900/20 text-text-secondary-light dark:text-text-secondary-dark hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                  title="Uninstall task"
+                                >
+                                  <PackageMinus size={14} />
+                                </button>
+                              )}
+                            </>
+                          )}
+                          {taskInfo && taskInfo.config_schema.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => toggleConfig(entry.task_id)}
+                              className={`p-1 rounded-md transition-colors ${
+                                expandedConfigs.has(entry.task_id)
+                                  ? "bg-warm-200 dark:bg-warm-900/50 text-warm-700 dark:text-warm-300"
+                                  : "hover:bg-warm-100 dark:hover:bg-warm-900/30 text-text-secondary-light dark:text-text-secondary-dark"
+                              }`}
+                              title={expandedConfigs.has(entry.task_id) ? "Hide configuration" : "Show configuration"}
+                            >
+                              <Settings size={14} />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setConfirmRemoveTaskId(entry.task_id)}
+                            className="p-1 rounded-md hover:bg-red-100 dark:hover:bg-red-900/20 text-text-secondary-light dark:text-text-secondary-dark hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                            title="Remove task"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                         <Toggle
                           checked={entry.enabled}
                           onChange={() => handleToggleTask(entry.task_id, entry.enabled)}
                         />
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveTask(entry.task_id)}
-                          className="p-1 rounded-md hover:bg-red-100 dark:hover:bg-red-900/20 text-text-secondary-light dark:text-text-secondary-dark hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                          title="Remove task"
-                        >
-                          <X size={14} />
-                        </button>
                       </div>
                     </div>
-                    {taskInfo && taskInfo.config_schema.length > 0 && (
+                    {taskInfo && taskInfo.config_schema.length > 0 && expandedConfigs.has(entry.task_id) && (
                       <div className="ml-9 mt-1">
                         <TaskConfigEditor
                           taskId={entry.task_id}
@@ -641,10 +773,52 @@ export function BlueprintDetailPage() {
                   variant="primary"
                   className="w-full"
                   onClick={() => setShowPreRun(true)}
+                  disabled={applyingBlueprint || uninstallingBlueprint}
                 >
                   <Play size={14} />
                   Run Blueprint
                 </Button>
+              )}
+              {nodeId && completedCount > 0 && (
+                <>
+                  {uninstallingBlueprint ? (
+                    <div className="space-y-2">
+                      <Button variant="danger" size="sm" className="w-full" disabled>
+                        Uninstalling...
+                      </Button>
+                      {uninstallProgress && (
+                        <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark text-center">
+                          {uninstallProgress}
+                        </p>
+                      )}
+                    </div>
+                  ) : confirmUninstall ? (
+                    <div className="space-y-2">
+                      <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                        This will uninstall all tasks in this blueprint that support uninstall. Tasks without uninstall support will be skipped.
+                      </p>
+                      <div className="flex gap-2">
+                        <Button variant="danger" size="sm" className="flex-1" onClick={handleUninstallBlueprint}>
+                          Confirm
+                        </Button>
+                        <Button variant="ghost" size="sm" className="flex-1" onClick={() => setConfirmUninstall(false)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      className="w-full"
+                      onClick={() => setConfirmUninstall(true)}
+                      disabled={applyingBlueprint}
+                    >
+                      <Undo2 size={14} />
+                      Uninstall Blueprint
+                    </Button>
+                  )}
+                </>
               )}
               <Button
                 size="sm"
@@ -706,19 +880,19 @@ export function BlueprintDetailPage() {
               <CardTitle>Details</CardTitle>
             </CardHeader>
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-4">
                 <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Version</span>
                 <span className="text-sm text-text-primary-light dark:text-text-primary-dark">
                   {blueprint.version}
                 </span>
               </div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-4">
                 <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Created</span>
                 <span className="text-sm text-text-primary-light dark:text-text-primary-dark">
                   {formatDate(blueprint.created_at)}
                 </span>
               </div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-4">
                 <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Updated</span>
                 <span className="text-sm text-text-primary-light dark:text-text-primary-dark">
                   {formatDate(blueprint.updated_at)}
@@ -775,6 +949,32 @@ export function BlueprintDetailPage() {
         </div>
       )}
 
+      {/* Remove task confirmation dialog */}
+      {confirmRemoveTaskId && (
+        <Dialog
+          open
+          onClose={() => setConfirmRemoveTaskId(null)}
+          title="Remove Task"
+        >
+          <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-4">
+            Remove{" "}
+            <span className="font-medium text-text-primary-light dark:text-text-primary-dark">
+              {taskInfoMap[confirmRemoveTaskId]?.name ?? confirmRemoveTaskId}
+            </span>{" "}
+            from this blueprint? Save to persist.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setConfirmRemoveTaskId(null)}>
+              Cancel
+            </Button>
+            <Button size="sm" variant="danger" onClick={() => handleRemoveTask(confirmRemoveTaskId)}>
+              <Trash2 size={14} />
+              Remove
+            </Button>
+          </div>
+        </Dialog>
+      )}
+
       <AddTaskDialog
         open={showAddTask}
         onClose={() => setShowAddTask(false)}
@@ -793,6 +993,18 @@ export function BlueprintDetailPage() {
           loading={applyingBlueprint}
           loadingMessage={applyProgress ?? undefined}
           nodeId={nodeId}
+        />
+      )}
+
+      {nodeId && taskAction && blueprintId && (
+        <TaskActionConfirmDialog
+          action={taskAction.action}
+          taskChain={taskAction.taskChain}
+          taskInfoMap={taskInfoMap}
+          nodeId={nodeId}
+          blueprintId={blueprintId}
+          pendingEntries={currentEntries()}
+          onClose={handleTaskActionClose}
         />
       )}
     </div>

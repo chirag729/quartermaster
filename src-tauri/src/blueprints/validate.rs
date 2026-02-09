@@ -44,6 +44,23 @@ pub fn validate_blueprint(def: &BlueprintDefinition) -> Vec<BlueprintValidationE
         });
     }
 
+    // Validate version is a valid semver-like string (MAJOR.MINOR.PATCH with optional parts)
+    if !def.version.is_empty() {
+        let parts: Vec<&str> = def.version.split('.').collect();
+        let valid = parts.len() <= 3
+            && !parts.is_empty()
+            && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()));
+        if !valid {
+            errors.push(BlueprintValidationError {
+                field: "version".into(),
+                message: format!(
+                    "must be a valid version (e.g. \"1.0.0\"), got \"{}\"",
+                    def.version
+                ),
+            });
+        }
+    }
+
     let mut seen_task_ids: HashSet<&str> = HashSet::new();
     for (i, task) in def.tasks.iter().enumerate() {
         if task.id.is_empty() {
@@ -124,5 +141,33 @@ mod tests {
         bp.tasks.clear();
         let errors = validate_blueprint(&bp);
         assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn invalid_version_fails() {
+        let mut bp = minimal_valid_blueprint();
+        bp.version = "abc".into();
+        let errors = validate_blueprint(&bp);
+        assert!(errors.iter().any(|e| e.field == "version"), "errors: {:?}", errors);
+    }
+
+    #[test]
+    fn valid_version_passes() {
+        let mut bp = minimal_valid_blueprint();
+        bp.version = "2.1.0".into();
+        let errors = validate_blueprint(&bp);
+        assert!(errors.is_empty(), "errors: {:?}", errors);
+    }
+
+    #[test]
+    fn partial_version_passes() {
+        let mut bp = minimal_valid_blueprint();
+        bp.version = "1".into();
+        let errors = validate_blueprint(&bp);
+        assert!(errors.is_empty(), "errors: {:?}", errors);
+
+        bp.version = "1.2".into();
+        let errors = validate_blueprint(&bp);
+        assert!(errors.is_empty(), "errors: {:?}", errors);
     }
 }

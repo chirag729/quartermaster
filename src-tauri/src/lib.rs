@@ -108,6 +108,8 @@ pub fn run() {
             commands::blueprints::remove_blueprint,
             commands::blueprints::apply_blueprint,
             commands::blueprints::apply_blueprint_bulk,
+            commands::blueprints::uninstall_blueprint,
+            commands::blueprints::uninstall_blueprint_bulk,
             commands::blueprints::dry_run_blueprint,
             commands::blueprints::clone_blueprint,
             commands::blueprints::create_blank_blueprint,

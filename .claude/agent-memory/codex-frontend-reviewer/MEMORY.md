@@ -22,8 +22,29 @@
 - React hooks: No stale closure bugs; useEffect cleanup proper
 - Store pattern: Mostly correct, but assignBlueprint/unassignBlueprint don't update store state
 
-## Recommendations for Next Review
-1. Consolidate event types to src/types/events.ts
-2. Make task-progress event type handle both single-task and blueprint-apply contexts
-3. Verify whether node-status-changed backend emission should exist or type should be removed
-4. Document event naming convention (kebab-case vs command snake_case)
+## Frontend UI Components Review Results (Latest)
+
+### Critical Findings (8 Issues)
+1. **HIGH**: ExecutionOutputPanel stays subscribed to task-output while hidden (NodeDetailPage:816, TaskExecutionDialog:299, ExecutionOutputPanel:41)
+2. **MEDIUM**: blueprint-task-warning listeners unscoped - show toasts from unrelated operations (NodeDetailPage:74, BlueprintDetailPage:155)
+3. **MEDIUM**: Event contract drift - TaskProgressEvent/TaskStateChangedEvent missing node_id field
+4. **LOW**: Inline partial event types instead of centralized definitions (blueprint-task-warning, etc.)
+5. **MEDIUM**: Silent error swallowing in preloads - NodeDetailPage:127, BlueprintDetailPage:247, BulkBlueprintDialog:93
+6. **MEDIUM**: CommandPalette crashes on empty results (modulo by zero) - CommandPalette:120
+7. **LOW**: Destructive actions without confirmation (ActivityFeed:80, SettingsPage:242)
+8. **LOW**: Bulk progress displays impossible "N+1 of N" - BulkBlueprintDialog:215
+
+### Root Causes
+- Dialog components mount even when closed (useState controls visibility, not mounting)
+- Dialog.tsx doesn't unmount on close - only calls .close()
+- Event listeners not filtered by context (blueprint_id, node_id)
+- Empty state not guarded in array operations (% flatFiltered.length)
+- Error .catch(() => {}) pattern swallows failures silently
+
+## Recommendations
+1. Fix ExecutionOutputPanel to unmount when dialog closes
+2. Consolidate event types to src/types/events.ts with full contracts
+3. Add node_id/blueprint_id to event types and filter listeners by context
+4. Replace silent .catch(() => {}) with actual error handling/toasts
+5. Guard empty array access in CommandPalette
+6. Add confirmation dialogs for destructive actions

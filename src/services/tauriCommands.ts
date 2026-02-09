@@ -13,8 +13,8 @@ export async function detectAllStates(): Promise<TaskInfo[]> {
   return invoke("detect_all_states");
 }
 
-export async function executeTask(taskId: string, nodeId?: string, blueprintId?: string): Promise<void> {
-  return invoke("execute_task", { taskId, nodeId, blueprintId });
+export async function executeTask(taskId: string, nodeId?: string, blueprintId?: string, configOverrides?: Record<string, unknown>): Promise<void> {
+  return invoke("execute_task", { taskId, nodeId, blueprintId, configOverrides });
 }
 
 export async function listTasksForNode(nodeId: string): Promise<TaskStateInfo[]> {
@@ -337,6 +337,14 @@ export interface BulkApplyResult {
 
 export async function applyBlueprintBulk(nodeIds: string[], blueprintId: string): Promise<BulkApplyResult[]> {
   return invoke("apply_blueprint_bulk", { nodeIds, blueprintId });
+}
+
+export async function uninstallBlueprint(nodeId: string, blueprintId: string): Promise<void> {
+  return invoke("uninstall_blueprint", { nodeId, blueprintId });
+}
+
+export async function uninstallBlueprintBulk(nodeIds: string[], blueprintId: string): Promise<BulkApplyResult[]> {
+  return invoke("uninstall_blueprint_bulk", { nodeIds, blueprintId });
 }
 
 // --- Dry-Run ---

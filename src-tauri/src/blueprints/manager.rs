@@ -394,7 +394,23 @@ impl Blueprint {
                         .config
                         .unwrap_or_default()
                         .into_iter()
-                        .map(|(k, v)| (k, Value::String(v)))
+                        .map(|(k, v)| {
+                            // Try to preserve type fidelity: parse booleans and numbers
+                            let typed = if v == "true" {
+                                Value::Bool(true)
+                            } else if v == "false" {
+                                Value::Bool(false)
+                            } else if let Ok(n) = v.parse::<i64>() {
+                                Value::Number(n.into())
+                            } else if let Ok(n) = v.parse::<f64>() {
+                                serde_json::Number::from_f64(n)
+                                    .map(Value::Number)
+                                    .unwrap_or_else(|| Value::String(v.clone()))
+                            } else {
+                                Value::String(v)
+                            };
+                            (k, typed)
+                        })
                         .collect(),
                     order: i as u32,
                 })
@@ -405,6 +421,11 @@ impl Blueprint {
     }
 
     pub fn to_definition(&self) -> BlueprintDefinition {
+        // Sort entries by order so YAML array position matches the user's ordering.
+        // from_definition() derives order from array index, so this roundtrip is critical.
+        let mut sorted_entries = self.task_entries.clone();
+        sorted_entries.sort_by_key(|e| e.order);
+
         BlueprintDefinition {
             id: self.id.clone(),
             name: self.name.clone(),
@@ -413,8 +434,7 @@ impl Blueprint {
             builtin: self.is_builtin,
             version: self.version.clone(),
             extends: self.extends.clone(),
-            tasks: self
-                .task_entries
+            tasks: sorted_entries
                 .iter()
                 .map(|e| BlueprintTaskDef {
                     id: e.task_id.clone(),

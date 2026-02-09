@@ -47,7 +47,10 @@ export function BulkBlueprintDialog({ open, onClose, selectedNodeIds }: BulkBlue
     setLoadingBlueprints(true);
     listBlueprints()
       .then(setBlueprints)
-      .catch(() => setBlueprints([]))
+      .catch(() => {
+        setBlueprints([]);
+        setError("Failed to load blueprints");
+      })
       .finally(() => setLoadingBlueprints(false));
   }, [open]);
 
@@ -169,7 +172,7 @@ export function BulkBlueprintDialog({ open, onClose, selectedNodeIds }: BulkBlue
           <div className="text-center py-4">
             <Loader2 size={24} className="animate-spin text-warm-500 mx-auto mb-3" />
             <p className="text-sm font-medium text-text-primary-light dark:text-text-primary-dark">
-              Applying "{selectedBlueprint?.name}" to node {progress.completed + 1} of {progress.total}...
+              Applying "{selectedBlueprint?.name}" to node {Math.min(progress.completed + 1, progress.total)} of {progress.total}...
             </p>
             {progress.current_node_name && (
               <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark mt-1">

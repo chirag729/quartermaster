@@ -50,3 +50,18 @@ steps:
     progress: 100
     run: |
       test -f {{sdk_base_path}}/flutter/bin/flutter
+
+uninstall:
+  - name: Remove Flutter PATH entries from shell configs
+    progress: 30
+    run: |
+      for rc in {{home}}/.bashrc {{home}}/.zshrc; do
+        [ -f "$rc" ] || continue
+        sed -i '/^# Flutter SDK$/d' "$rc"
+        sed -i '\|{{sdk_base_path}}/flutter/bin|d' "$rc"
+      done
+
+  - name: Remove Flutter SDK directory
+    progress: 100
+    run: |
+      rm -rf {{sdk_base_path}}/flutter

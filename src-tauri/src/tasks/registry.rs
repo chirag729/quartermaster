@@ -59,6 +59,9 @@ impl TaskRegistry {
         let mut queue: VecDeque<String> = VecDeque::new();
 
         for id in task_ids {
+            if !deps_map.contains_key(id.as_str()) {
+                return Err(format!("Task '{}' not found in registry", id));
+            }
             if !required.contains(id) {
                 required.insert(id.clone());
                 queue.push_back(id.clone());
@@ -68,6 +71,12 @@ impl TaskRegistry {
         while let Some(current) = queue.pop_front() {
             if let Some(deps) = deps_map.get(current.as_str()) {
                 for dep in deps {
+                    if !deps_map.contains_key(dep.as_str()) {
+                        return Err(format!(
+                            "Task '{}' depends on '{}', which is not in the registry",
+                            current, dep
+                        ));
+                    }
                     if !required.contains(dep) {
                         required.insert(dep.clone());
                         queue.push_back(dep.clone());

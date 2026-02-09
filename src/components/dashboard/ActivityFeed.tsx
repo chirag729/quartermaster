@@ -57,6 +57,7 @@ export function ActivityFeed({ maxEntries = 20 }: ActivityFeedProps) {
   }, [loadActivity]);
 
   const handleClear = useCallback(async () => {
+    if (!window.confirm("Clear all activity log entries?")) return;
     try {
       await api.clearActivityLog();
       setEntries([]);

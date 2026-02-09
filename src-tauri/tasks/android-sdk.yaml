@@ -49,3 +49,20 @@ steps:
         grep -qF 'ANDROID_HOME' "$rc" && continue
         printf '\n# Android SDK\nexport ANDROID_HOME="{{sdk_base_path}}/android"\nexport PATH="{{sdk_base_path}}/android/cmdline-tools/latest/bin:{{sdk_base_path}}/android/platform-tools:$PATH"\n' >> "$rc"
       done
+
+uninstall:
+  - name: Remove Android SDK PATH and environment entries from shell configs
+    progress: 30
+    run: |
+      for rc in {{home}}/.bashrc {{home}}/.zshrc; do
+        [ -f "$rc" ] || continue
+        # Remove the comment line, ANDROID_HOME export, and PATH line referencing this SDK
+        sed -i '/^# Android SDK$/d' "$rc"
+        sed -i '/export ANDROID_HOME=/d' "$rc"
+        sed -i '\|{{sdk_base_path}}/android|d' "$rc"
+      done
+
+  - name: Remove Android SDK directory
+    progress: 100
+    run: |
+      rm -rf {{sdk_base_path}}/android

@@ -452,20 +452,53 @@ pub fn export_blueprint(
         }
     }
 
-    // Copy apparmor/profiles/ if present
-    let profiles_src = config_base.join("apparmor").join("profiles");
-    if profiles_src.is_dir() {
-        let profiles_dest = staging.path().join("apparmor").join("profiles");
-        fs::create_dir_all(&profiles_dest)?;
-        copy_directory_contents(&profiles_src, &profiles_dest)?;
+    // Collect AppArmor profile/abstraction names referenced by blueprint tasks
+    let mut referenced_profiles: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut referenced_abstractions: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let task_ids: Vec<&str> = _def.tasks.iter().map(|t| t.id.as_str()).collect();
+    let tasks_src_dir = config_base.join("tasks");
+    if tasks_src_dir.is_dir() {
+        for task_id in &task_ids {
+            let task_yaml = tasks_src_dir.join(format!("{}.yaml", task_id));
+            if task_yaml.exists() {
+                if let Ok(content) = fs::read_to_string(&task_yaml) {
+                    if let Ok(def) = serde_yaml::from_str::<crate::tasks::yaml_schema::TaskDefinition>(&content) {
+                        if let Some(ref aa) = def.apparmor {
+                            referenced_profiles.insert(aa.profile.clone());
+                            for abs_name in &aa.abstractions {
+                                referenced_abstractions.insert(abs_name.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    // Copy apparmor/abstractions/ if present
+    // Copy only referenced apparmor profiles
+    let profiles_src = config_base.join("apparmor").join("profiles");
+    if profiles_src.is_dir() && !referenced_profiles.is_empty() {
+        let profiles_dest = staging.path().join("apparmor").join("profiles");
+        fs::create_dir_all(&profiles_dest)?;
+        for name in &referenced_profiles {
+            let src = profiles_src.join(name);
+            if src.exists() {
+                fs::copy(&src, profiles_dest.join(name))?;
+            }
+        }
+    }
+
+    // Copy only referenced apparmor abstractions
     let abstractions_src = config_base.join("apparmor").join("abstractions");
-    if abstractions_src.is_dir() {
+    if abstractions_src.is_dir() && !referenced_abstractions.is_empty() {
         let abstractions_dest = staging.path().join("apparmor").join("abstractions");
         fs::create_dir_all(&abstractions_dest)?;
-        copy_directory_contents(&abstractions_src, &abstractions_dest)?;
+        for name in &referenced_abstractions {
+            let src = abstractions_src.join(name);
+            if src.exists() {
+                fs::copy(&src, abstractions_dest.join(name))?;
+            }
+        }
     }
 
     pack_blueprint(staging.path(), output_path)
@@ -477,9 +510,7 @@ pub fn export_blueprint(
 
 /// Resolves the Quartermaster configuration base directory.
 fn config_base_dir() -> Result<PathBuf, AppError> {
-    let base = dirs::config_dir()
-        .ok_or_else(|| AppError::Package("Cannot determine user config directory".to_string()))?;
-    Ok(base.join("quartermaster"))
+    Ok(crate::dirs::config_dir())
 }
 
 /// Validates that a path points to an existing `.qmbp` file.
@@ -526,20 +557,6 @@ fn add_directory_to_zip<W: Write + std::io::Seek>(
         } else if path.is_dir() {
             let sub_prefix = format!("{}{}/", zip_prefix, file_name);
             add_directory_to_zip(zip, &path, &sub_prefix, options)?;
-        }
-    }
-    Ok(())
-}
-
-/// Copies all files from `src` to `dest` (non-recursive, files only).
-fn copy_directory_contents(src: &Path, dest: &Path) -> Result<(), AppError> {
-    let entries = fs::read_dir(src)?;
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_file() {
-            let dest_file = dest.join(entry.file_name());
-            fs::copy(&path, &dest_file)?;
         }
     }
     Ok(())
@@ -1011,9 +1028,34 @@ id: aa-bp
 name: AppArmor Blueprint
 description: With apparmor
 icon: Shield
-tasks: []
+tasks:
+  - id: test-task
+    enabled: true
 "#;
         fs::write(blueprints_dir.join("aa-bp.yaml"), manifest_yaml).unwrap();
+
+        // Add a task YAML with an AppArmor reference
+        let tasks_dir = config_dir.path().join("tasks");
+        fs::create_dir_all(&tasks_dir).unwrap();
+        let task_yaml = r#"
+id: test-task
+name: Test Task
+description: A task with apparmor
+icon: Shield
+category: Testing
+privilege: user
+target: local
+detect: "which test"
+steps:
+  - name: noop
+    progress: 100
+    run: "true"
+apparmor:
+  profile: usr.bin.test
+  abstractions:
+    - test-abs
+"#;
+        fs::write(tasks_dir.join("test-task.yaml"), task_yaml).unwrap();
 
         // Add apparmor files
         let profiles_dir = config_dir.path().join("apparmor").join("profiles");

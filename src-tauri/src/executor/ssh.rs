@@ -10,6 +10,19 @@ use super::{CommandExecutor, CommandOutput};
 /// Default timeout for SSH command execution (5 minutes).
 const SSH_COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
 
+/// Maximum length of stderr included in error messages to avoid leaking sensitive data.
+const MAX_STDERR_IN_ERROR: usize = 200;
+
+/// Truncate a string for safe inclusion in error messages.
+fn truncate_stderr(s: &str) -> String {
+    let trimmed = s.trim();
+    if trimmed.len() <= MAX_STDERR_IN_ERROR {
+        trimmed.to_string()
+    } else {
+        format!("{}... (truncated)", &trimmed[..MAX_STDERR_IN_ERROR])
+    }
+}
+
 /// How the SSH connection should authenticate.
 #[derive(Clone)]
 enum AuthMode {
@@ -198,7 +211,7 @@ impl CommandExecutor for SshExecutor {
     async fn read_file(&self, path: &str) -> Result<String, AppError> {
         let output = self.run_command("cat", &[path]).await?;
         if output.status != 0 {
-            return Err(AppError::Ssh(format!("Failed to read file: {}", output.stderr)));
+            return Err(AppError::Ssh(format!("Failed to read file: {}", truncate_stderr(&output.stderr))));
         }
         Ok(output.stdout)
     }
@@ -226,7 +239,7 @@ impl CommandExecutor for SshExecutor {
             .map_err(|e| AppError::Ssh(format!("SSH write_file failed: {}", e)))?;
 
         if !output.status.success() {
-            return Err(AppError::Ssh(format!("Failed to write file: {}", String::from_utf8_lossy(&output.stderr))));
+            return Err(AppError::Ssh(format!("Failed to write file: {}", truncate_stderr(&String::from_utf8_lossy(&output.stderr)))));
         }
         Ok(())
     }
@@ -234,7 +247,7 @@ impl CommandExecutor for SshExecutor {
     async fn create_dir_all(&self, path: &str) -> Result<(), AppError> {
         let output = self.run_command("mkdir", &["-p", path]).await?;
         if output.status != 0 {
-            return Err(AppError::Ssh(format!("Failed to create directory: {}", output.stderr)));
+            return Err(AppError::Ssh(format!("Failed to create directory: {}", truncate_stderr(&output.stderr))));
         }
         Ok(())
     }

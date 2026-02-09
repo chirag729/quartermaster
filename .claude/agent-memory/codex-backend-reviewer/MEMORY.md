@@ -23,8 +23,26 @@
 - Task enable/disable flag honored during apply
 - Task ordering preserved and re-sorted after dependency resolution
 
-### Session Notes
+### Session Notes (Blueprint System)
 - Manual code review (no codex tool used per user instructions)
 - Focused on CONTRACT ENFORCEMENT, ERROR PROPAGATION, and STATE CONSISTENCY strategies
 - Found executor lifetime bug that would crash at runtime or cause undefined behavior
 - Silent error drops during package import are data-loss risk
+
+## Backend Core & State Review (2026-02-09)
+
+### Scope
+Reviewed with codex CLI (applied all 6 strategies):
+- src-tauri/src/state.rs
+- src-tauri/src/config/manager.rs
+- src-tauri/src/config/mod.rs
+- src-tauri/src/error.rs
+- src-tauri/src/dirs.rs
+- src-tauri/src/lib.rs
+- src-tauri/src/main.rs
+- src-tauri/src/activity_log.rs
+- src-tauri/src/notifications.rs
+- src-tauri/src/variables/mod.rs
+
+### Key Finding
+No actionable bugs found in core/state infrastructure. Recent patch additions (uninstall_blueprint commands, notification helpers) are correctly wired and follow existing patterns.

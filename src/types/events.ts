@@ -1,5 +1,6 @@
 export interface TaskProgressEvent {
   task_id: string;
+  node_id?: string;
   progress: number;
   message: string;
 }
@@ -10,6 +11,7 @@ export interface AppArmorDenialEvent {
 
 export interface TaskStateChangedEvent {
   task_id: string;
+  node_id?: string;
   status: import("./task").TaskStatus;
 }
 

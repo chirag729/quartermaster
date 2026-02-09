@@ -243,7 +243,10 @@ fn find_profile_path(profile_name: &str) -> Result<PathBuf, AppError> {
 
     let apparmor_dir = PathBuf::from("/etc/apparmor.d");
     if apparmor_dir.exists() {
-        if let Ok(entries) = std::fs::read_dir(&apparmor_dir) {
+        if let Ok(entries) = std::fs::read_dir(&apparmor_dir).map_err(|e| {
+            eprintln!("Warning: Failed to read AppArmor directory {:?}: {}", apparmor_dir, e);
+            e
+        }) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_file() {

@@ -117,6 +117,24 @@ Blueprints can be packaged as `.qmbp` files for sharing across machines:
 
 Path traversal protections ensure that malformed `.qmbp` files cannot write outside the intended directories.
 
+## Uninstall
+
+You can uninstall a blueprint from a node, reversing the changes made by all tasks that support uninstall:
+
+1. Navigate to a node's blueprint detail page (Fleet > Node > assigned blueprint).
+2. Click **Uninstall Blueprint** in the Actions sidebar (only appears when at least one task is installed).
+3. Confirm the action. The confirmation dialog notes that tasks without uninstall support will be skipped.
+4. Quartermaster uninstalls tasks in **reverse order** (dependents before dependencies) to avoid leaving the system in a broken state.
+5. For each task:
+   - Tasks that don't support uninstall are skipped (a warning toast appears).
+   - Tasks that aren't currently installed are skipped.
+   - Tasks whose execution target doesn't match the node type are skipped.
+6. On completion, the node's `applied_blueprint_version` is cleared and all installation records for uninstalled tasks are removed.
+
+### Bulk Uninstall
+
+Like bulk apply, you can uninstall a blueprint from multiple nodes at once. The `uninstall_blueprint_bulk` command processes each node sequentially to avoid overwhelming SSH connections. Per-node results (success or failure) are reported.
+
 ## Bulk Apply
 
 You can apply a blueprint to multiple nodes simultaneously:

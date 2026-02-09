@@ -19,3 +19,9 @@ steps:
     progress: 100
     run: |
       npm install -g @anthropic-ai/claude-code
+
+uninstall:
+  - name: Uninstall Claude Code via npm
+    progress: 100
+    run: |
+      npm uninstall -g @anthropic-ai/claude-code

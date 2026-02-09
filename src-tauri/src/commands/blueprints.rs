@@ -209,15 +209,15 @@ pub async fn delete_blueprint(
     id: String,
     state: State<'_, AppState>,
 ) -> Result<(), AppError> {
-    // Hold bp_manager across the entire operation (check + remove)
-    let mut bp_manager = state.blueprint_manager.lock().await;
-
-    // Check if builtin
-    let bp = bp_manager
-        .get_blueprint(&id)
-        .ok_or_else(|| AppError::Blueprint(format!("Blueprint not found: {}", id)))?;
-    if bp.is_builtin {
-        return Err(AppError::Blueprint("Cannot delete a built-in blueprint".to_string()));
+    // Check if builtin (acquire and release bp_manager before fleet operations)
+    {
+        let bp_manager = state.blueprint_manager.lock().await;
+        let bp = bp_manager
+            .get_blueprint(&id)
+            .ok_or_else(|| AppError::Blueprint(format!("Blueprint not found: {}", id)))?;
+        if bp.is_builtin {
+            return Err(AppError::Blueprint("Cannot delete a built-in blueprint".to_string()));
+        }
     }
 
     // Unassign from any nodes that reference this blueprint
@@ -238,6 +238,8 @@ pub async fn delete_blueprint(
         }
     }
 
+    // Re-acquire bp_manager to remove the blueprint
+    let mut bp_manager = state.blueprint_manager.lock().await;
     bp_manager.remove_blueprint(&id)?;
     Ok(())
 }
@@ -368,6 +370,7 @@ pub async fn apply_blueprint(
             Some(t) => t,
             None => {
                 let _ = app.emit("blueprint-task-warning", serde_json::json!({
+                    "node_id": &node_id,
                     "blueprint_id": blueprint_id,
                     "task_id": entry.task_id,
                     "warning": format!("Unknown task '{}' was skipped", entry.task_id),
@@ -380,6 +383,7 @@ pub async fn apply_blueprint(
         match (task.execution_target(), &node.kind) {
             (ExecutionTarget::LocalOnly, NodeKind::Remote) | (ExecutionTarget::RemoteOnly, NodeKind::Local) => {
                 let _ = app.emit("blueprint-task-warning", serde_json::json!({
+                    "node_id": &node_id,
                     "blueprint_id": blueprint_id,
                     "task_id": entry.task_id,
                     "warning": format!("Task '{}' skipped: incompatible execution target", entry.task_id),
@@ -393,6 +397,7 @@ pub async fn apply_blueprint(
         if task.privilege_level() == PrivilegeLevel::Admin && node.kind == NodeKind::Local {
             if !crate::polkit::auth::is_policy_installed() {
                 let _ = app.emit("blueprint-task-warning", serde_json::json!({
+                    "node_id": &node_id,
                     "blueprint_id": blueprint_id,
                     "task_id": entry.task_id,
                     "warning": format!("Task '{}' skipped: requires admin privileges but PolicyKit policy is not installed", entry.task_id),
@@ -481,15 +486,6 @@ pub async fn apply_blueprint(
         });
 
         if let Err(e) = task.execute(&task_config, exec, &progress_cb, Some(&output_cb)).await {
-            let _ = app.emit(
-                "blueprint-task-failed",
-                serde_json::json!({
-                    "node_id": node_id,
-                    "blueprint_id": blueprint_id,
-                    "task_id": entry.task_id,
-                    "error": e.to_string(),
-                }),
-            );
             return Err(e);
         }
 
@@ -505,6 +501,9 @@ pub async fn apply_blueprint(
             let key = install_state::state_key(&entry.task_id, &node_id);
             let mut config = state.config.lock().await;
             config.data.installed_tasks.insert(key, install_record);
+            if !config.data.completed_tasks.contains(&entry.task_id) {
+                config.data.completed_tasks.push(entry.task_id.clone());
+            }
             config.save().map_err(|e| AppError::Config(format!(
                 "Failed to save install state for task '{}': {}", entry.task_id, e
             )))?;
@@ -647,6 +646,19 @@ pub async fn dry_run_blueprint(
                 continue;
             }
             _ => {}
+        }
+
+        // Enforce privilege level constraints for local execution
+        if task.privilege_level() == PrivilegeLevel::Admin && node.kind == NodeKind::Local {
+            if !crate::polkit::auth::is_policy_installed() {
+                task_actions.push(DryRunTaskResult {
+                    task_id: entry.task_id.clone(),
+                    task_name: task.name().to_string(),
+                    status: "skipped".to_string(),
+                    actions: vec![],
+                });
+                continue;
+            }
         }
 
         // Merge config: base task config + blueprint overrides
@@ -817,6 +829,7 @@ pub async fn apply_blueprint_bulk(
                 Some(t) => t,
                 None => {
                     let _ = app.emit("blueprint-task-warning", serde_json::json!({
+                        "node_id": &node_id,
                         "blueprint_id": blueprint_id,
                         "task_id": entry.task_id,
                         "warning": format!("Unknown task '{}' was skipped", entry.task_id),
@@ -829,6 +842,7 @@ pub async fn apply_blueprint_bulk(
             match (task.execution_target(), &node.kind) {
                 (ExecutionTarget::LocalOnly, NodeKind::Remote) | (ExecutionTarget::RemoteOnly, NodeKind::Local) => {
                     let _ = app.emit("blueprint-task-warning", serde_json::json!({
+                        "node_id": &node_id,
                         "blueprint_id": blueprint_id,
                         "task_id": entry.task_id,
                         "warning": format!("Task '{}' skipped: incompatible execution target", entry.task_id),
@@ -842,6 +856,7 @@ pub async fn apply_blueprint_bulk(
             if task.privilege_level() == PrivilegeLevel::Admin && node.kind == NodeKind::Local {
                 if !crate::polkit::auth::is_policy_installed() {
                     let _ = app.emit("blueprint-task-warning", serde_json::json!({
+                        "node_id": &node_id,
                         "blueprint_id": blueprint_id,
                         "task_id": entry.task_id,
                         "warning": format!("Task '{}' skipped: requires admin privileges but PolicyKit policy is not installed", entry.task_id),
@@ -929,6 +944,9 @@ pub async fn apply_blueprint_bulk(
                         let key = install_state::state_key(&entry.task_id, node_id);
                         let mut config = state.config.lock().await;
                         config.data.installed_tasks.insert(key, install_record);
+                        if !config.data.completed_tasks.contains(&entry.task_id) {
+                            config.data.completed_tasks.push(entry.task_id.clone());
+                        }
                         if let Err(e) = config.save() {
                             node_error = Some(format!(
                                 "Failed to save install state for task '{}': {}",
@@ -960,7 +978,9 @@ pub async fn apply_blueprint_bulk(
             if let Some(n) = fleet_manager.get_node(node_id).cloned() {
                 let mut updated = n;
                 updated.applied_blueprint_version = Some(blueprint.version.clone());
-                let _ = fleet_manager.update_node(updated);
+                if let Err(e) = fleet_manager.update_node(updated) {
+                    eprintln!("Warning: Failed to update node metadata: {}", e);
+                }
             }
             drop(fleet_manager);
         }
@@ -1003,6 +1023,506 @@ pub async fn apply_blueprint_bulk(
 
     // Send desktop notification
     crate::notifications::notify_bulk_complete(&app, &blueprint.name, succeeded, failed);
+
+    Ok(results)
+}
+
+#[tauri::command]
+pub async fn uninstall_blueprint(
+    node_id: String,
+    blueprint_id: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), AppError> {
+    // Get the blueprint
+    let bp_manager = state.blueprint_manager.lock().await;
+    let blueprint = bp_manager
+        .get_blueprint(&blueprint_id)
+        .cloned()
+        .ok_or_else(|| AppError::Blueprint(format!("Blueprint not found: {}", blueprint_id)))?;
+
+    // Resolve inherited entries (merges parent + child)
+    let resolved_entries = bp_manager.resolve_task_entries(&blueprint_id)?;
+    drop(bp_manager);
+
+    // Verify the node exists and get its kind
+    let fleet_manager = state.fleet_manager.lock().await;
+    let node = fleet_manager
+        .get_node(&node_id)
+        .cloned()
+        .ok_or_else(|| AppError::Fleet(format!("Node not found: {}", node_id)))?;
+    drop(fleet_manager);
+
+    // Get enabled entries sorted by REVERSE order (uninstall dependents before dependencies)
+    let mut entries: Vec<BlueprintTaskEntry> = resolved_entries
+        .into_iter()
+        .filter(|e| e.enabled)
+        .collect();
+    entries.sort_by_key(|e| std::cmp::Reverse(e.order));
+
+    let total = entries.len();
+
+    // For remote nodes, build the SSH executor once (shared across tasks)
+    let ssh_exec: Option<Box<dyn CommandExecutor>> = match node.kind {
+        NodeKind::Local => None,
+        NodeKind::Remote => {
+            let ssh_config = node.ssh_config.as_ref().ok_or_else(|| {
+                AppError::Ssh(format!("Remote node '{}' has no SSH configuration", node.name))
+            })?;
+            let vault_password: Option<String> = match &ssh_config.auth_method {
+                crate::fleet::SshAuthMethod::Password { vault_key } => {
+                    if let Some(key) = vault_key {
+                        let vault = state.vault.lock().await;
+                        vault.get(key)?
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+            Some(Box::new(SshExecutor::from_ssh_config(ssh_config, vault_password.as_deref())))
+        }
+    };
+
+    let mut skipped = 0usize;
+    let mut uninstalled = 0usize;
+
+    for (i, entry) in entries.iter().enumerate() {
+        let task = match state.registry.get(&entry.task_id) {
+            Some(t) => t,
+            None => {
+                skipped += 1;
+                continue;
+            }
+        };
+
+        // Skip tasks that don't support uninstall
+        if !task.supports_uninstall() {
+            let _ = app.emit("blueprint-task-warning", serde_json::json!({
+                "node_id": &node_id,
+                "blueprint_id": blueprint_id,
+                "task_id": entry.task_id,
+                "warning": format!("Task '{}' does not support uninstall — skipped", task.name()),
+            }));
+            skipped += 1;
+            continue;
+        }
+
+        // Enforce execution target constraints
+        match (task.execution_target(), &node.kind) {
+            (ExecutionTarget::LocalOnly, NodeKind::Remote) | (ExecutionTarget::RemoteOnly, NodeKind::Local) => {
+                let _ = app.emit("blueprint-task-warning", serde_json::json!({
+                    "node_id": &node_id,
+                    "blueprint_id": blueprint_id,
+                    "task_id": entry.task_id,
+                    "warning": format!("Task '{}' skipped: incompatible execution target", entry.task_id),
+                }));
+                skipped += 1;
+                continue;
+            }
+            _ => {}
+        }
+
+        // Choose executor per task
+        let exec: &dyn CommandExecutor = if let Some(ref ssh) = ssh_exec {
+            ssh.as_ref()
+        } else if task.privilege_level() == PrivilegeLevel::Admin {
+            &PrivilegedLocalExecutor::new()
+        } else {
+            &LocalExecutor::new()
+        };
+
+        // Merge config: base task config + blueprint overrides
+        let config = state.config.lock().await;
+        let mut task_config: HashMap<String, serde_json::Value> = config
+            .data
+            .task_configs
+            .get(&entry.task_id)
+            .cloned()
+            .unwrap_or_default();
+        drop(config);
+
+        for (k, v) in &entry.config_overrides {
+            task_config.insert(k.clone(), v.clone());
+        }
+
+        // Skip tasks that aren't currently installed
+        let status = task.detect_state(&task_config, exec).await;
+        if status != TaskStatus::Completed {
+            skipped += 1;
+            continue;
+        }
+
+        // Emit blueprint uninstall progress
+        let _ = app.emit(
+            "blueprint-uninstall-progress",
+            serde_json::json!({
+                "node_id": node_id,
+                "blueprint_id": blueprint_id,
+                "completed": i,
+                "total": total,
+                "current_task_id": entry.task_id,
+            }),
+        );
+
+        // Uninstall with progress callback
+        let app_handle = app.clone();
+        let tid = entry.task_id.clone();
+        let nid = node_id.clone();
+        let progress_cb: crate::tasks::ProgressCallback =
+            Box::new(move |progress, message| {
+                let _ = app_handle.emit(
+                    "task-progress",
+                    serde_json::json!({
+                        "node_id": nid,
+                        "task_id": tid,
+                        "progress": progress,
+                        "message": message,
+                    }),
+                );
+            });
+
+        // Output callback for real-time step output
+        let app_for_output = app.clone();
+        let tid_for_output = entry.task_id.clone();
+        let nid_for_output = node_id.clone();
+        let output_cb: OutputCallback = Box::new(move |step: StepOutput| {
+            let _ = app_for_output.emit("task-output", serde_json::json!({
+                "node_id": nid_for_output,
+                "task_id": tid_for_output,
+                "step_index": step.step_index,
+                "step_total": step.step_total,
+                "step_name": step.step_name,
+                "command": step.command,
+                "stdout": step.stdout,
+                "stderr": step.stderr,
+                "exit_code": step.exit_code,
+                "duration_ms": step.duration_ms,
+            }));
+        });
+
+        if let Err(e) = task.uninstall(&task_config, exec, &progress_cb, Some(&output_cb)).await {
+            return Err(e);
+        }
+
+        // Remove installation state for this task
+        {
+            let key = install_state::state_key(&entry.task_id, &node_id);
+            let mut config = state.config.lock().await;
+            config.data.installed_tasks.remove(&key);
+            config.data.completed_tasks.retain(|t| t != &entry.task_id);
+            config.save().map_err(|e| AppError::Config(format!(
+                "Failed to save state after uninstalling task '{}': {}", entry.task_id, e
+            )))?;
+        }
+
+        let _ = app.emit(
+            "task-state-changed",
+            serde_json::json!({
+                "node_id": node_id,
+                "task_id": entry.task_id,
+                "status": "not_started",
+            }),
+        );
+
+        uninstalled += 1;
+    }
+
+    // Clear applied_blueprint_version on the node
+    let mut fleet_manager = state.fleet_manager.lock().await;
+    if let Some(node) = fleet_manager.get_node(&node_id).cloned() {
+        let mut updated = node;
+        updated.applied_blueprint_version = None;
+        fleet_manager.update_node(updated)?;
+    }
+    drop(fleet_manager);
+
+    // Emit completion
+    let _ = app.emit(
+        "blueprint-uninstall-complete",
+        serde_json::json!({
+            "node_id": node_id,
+            "blueprint_id": blueprint_id,
+            "uninstalled": uninstalled,
+            "skipped": skipped,
+        }),
+    );
+
+    // Log to activity log
+    {
+        let mut log = state.activity_log.lock().await;
+        log.log(
+            "blueprint_uninstalled",
+            &blueprint.name,
+            Some(&format!(
+                "node: {}, {} tasks uninstalled, {} skipped",
+                node_id, uninstalled, skipped
+            )),
+            true,
+        );
+    }
+
+    // Send desktop notification
+    crate::notifications::notify_blueprint_uninstalled(&app, &blueprint.name, &node.name);
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn uninstall_blueprint_bulk(
+    node_ids: Vec<String>,
+    blueprint_id: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Vec<BulkApplyResult>, AppError> {
+    // Validate the blueprint exists first
+    let bp_manager = state.blueprint_manager.lock().await;
+    let blueprint = bp_manager
+        .get_blueprint(&blueprint_id)
+        .cloned()
+        .ok_or_else(|| AppError::Blueprint(format!("Blueprint not found: {}", blueprint_id)))?;
+
+    // Resolve inherited entries (merges parent + child)
+    let resolved_entries = bp_manager.resolve_task_entries(&blueprint_id)?;
+    drop(bp_manager);
+
+    let total = node_ids.len();
+    let mut results: Vec<BulkApplyResult> = Vec::with_capacity(total);
+
+    // Get enabled entries sorted by REVERSE order (uninstall dependents before dependencies)
+    let mut entries: Vec<BlueprintTaskEntry> = resolved_entries
+        .into_iter()
+        .filter(|e| e.enabled)
+        .collect();
+    entries.sort_by_key(|e| std::cmp::Reverse(e.order));
+
+    for (i, node_id) in node_ids.iter().enumerate() {
+        // Look up the node
+        let fleet_manager = state.fleet_manager.lock().await;
+        let node = match fleet_manager.get_node(node_id).cloned() {
+            Some(n) => n,
+            None => {
+                results.push(BulkApplyResult {
+                    node_id: node_id.clone(),
+                    node_name: "Unknown".to_string(),
+                    success: false,
+                    error: Some(format!("Node not found: {}", node_id)),
+                });
+                continue;
+            }
+        };
+        drop(fleet_manager);
+
+        let node_name = node.name.clone();
+
+        // Emit bulk progress event
+        let _ = app.emit(
+            "bulk-blueprint-progress",
+            serde_json::json!({
+                "completed": i,
+                "total": total,
+                "current_node_id": node_id,
+                "current_node_name": node_name,
+            }),
+        );
+
+        // Build the SSH executor for remote nodes
+        let ssh_exec: Option<Box<dyn CommandExecutor>> = match node.kind {
+            NodeKind::Local => None,
+            NodeKind::Remote => {
+                match node.ssh_config.as_ref() {
+                    Some(ssh_config) => {
+                        let vault_password: Option<String> = match &ssh_config.auth_method {
+                            crate::fleet::SshAuthMethod::Password { vault_key } => {
+                                if let Some(key) = vault_key {
+                                    let vault = state.vault.lock().await;
+                                    vault.get(key)?
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None,
+                        };
+                        Some(Box::new(SshExecutor::from_ssh_config(ssh_config, vault_password.as_deref())))
+                    }
+                    None => {
+                        results.push(BulkApplyResult {
+                            node_id: node_id.clone(),
+                            node_name,
+                            success: false,
+                            error: Some(format!(
+                                "Remote node '{}' has no SSH configuration",
+                                node.name
+                            )),
+                        });
+                        continue;
+                    }
+                }
+            }
+        };
+
+        // Run the uninstall for each task on this node
+        let mut node_error: Option<String> = None;
+        for entry in &entries {
+            let task = match state.registry.get(&entry.task_id) {
+                Some(t) => t,
+                None => continue,
+            };
+
+            // Skip tasks that don't support uninstall
+            if !task.supports_uninstall() {
+                continue;
+            }
+
+            // Enforce execution target constraints
+            match (task.execution_target(), &node.kind) {
+                (ExecutionTarget::LocalOnly, NodeKind::Remote) | (ExecutionTarget::RemoteOnly, NodeKind::Local) => {
+                    continue;
+                }
+                _ => {}
+            }
+
+            let exec: &dyn CommandExecutor = if let Some(ref ssh) = ssh_exec {
+                ssh.as_ref()
+            } else if task.privilege_level() == PrivilegeLevel::Admin {
+                &PrivilegedLocalExecutor::new()
+            } else {
+                &LocalExecutor::new()
+            };
+
+            // Merge config
+            let config = state.config.lock().await;
+            let mut task_config: HashMap<String, serde_json::Value> = config
+                .data
+                .task_configs
+                .get(&entry.task_id)
+                .cloned()
+                .unwrap_or_default();
+            drop(config);
+
+            for (k, v) in &entry.config_overrides {
+                task_config.insert(k.clone(), v.clone());
+            }
+
+            // Skip tasks that aren't installed
+            let status = task.detect_state(&task_config, exec).await;
+            if status != TaskStatus::Completed {
+                continue;
+            }
+
+            // Uninstall with progress callback
+            let app_handle = app.clone();
+            let tid = entry.task_id.clone();
+            let nid = node_id.clone();
+            let progress_cb: crate::tasks::ProgressCallback =
+                Box::new(move |progress, message| {
+                    let _ = app_handle.emit(
+                        "task-progress",
+                        serde_json::json!({
+                            "node_id": nid,
+                            "task_id": tid,
+                            "progress": progress,
+                            "message": message,
+                        }),
+                    );
+                });
+
+            let app_for_output = app.clone();
+            let tid_for_output = entry.task_id.clone();
+            let nid_for_output = node_id.clone();
+            let output_cb: OutputCallback = Box::new(move |step: StepOutput| {
+                let _ = app_for_output.emit("task-output", serde_json::json!({
+                    "node_id": nid_for_output,
+                    "task_id": tid_for_output,
+                    "step_index": step.step_index,
+                    "step_total": step.step_total,
+                    "step_name": step.step_name,
+                    "command": step.command,
+                    "stdout": step.stdout,
+                    "stderr": step.stderr,
+                    "exit_code": step.exit_code,
+                    "duration_ms": step.duration_ms,
+                }));
+            });
+
+            match task.uninstall(&task_config, exec, &progress_cb, Some(&output_cb)).await {
+                Ok(_) => {
+                    // Remove installation state
+                    {
+                        let key = install_state::state_key(&entry.task_id, node_id);
+                        let mut config = state.config.lock().await;
+                        config.data.installed_tasks.remove(&key);
+                        config.data.completed_tasks.retain(|t| t != &entry.task_id);
+                        if let Err(e) = config.save() {
+                            node_error = Some(format!(
+                                "Failed to save state after uninstalling task '{}': {}",
+                                entry.task_id, e
+                            ));
+                            break;
+                        }
+                    }
+
+                    let _ = app.emit(
+                        "task-state-changed",
+                        serde_json::json!({
+                            "node_id": node_id,
+                            "task_id": entry.task_id,
+                            "status": "not_started",
+                        }),
+                    );
+                }
+                Err(e) => {
+                    node_error = Some(format!("Task '{}' uninstall failed: {}", entry.task_id, e));
+                    break;
+                }
+            }
+        }
+
+        // Clear applied_blueprint_version on successful nodes
+        if node_error.is_none() {
+            let mut fleet_manager = state.fleet_manager.lock().await;
+            if let Some(n) = fleet_manager.get_node(node_id).cloned() {
+                let mut updated = n;
+                updated.applied_blueprint_version = None;
+                if let Err(e) = fleet_manager.update_node(updated) {
+                    eprintln!("Warning: Failed to update node metadata: {}", e);
+                }
+            }
+            drop(fleet_manager);
+        }
+
+        results.push(BulkApplyResult {
+            node_id: node_id.clone(),
+            node_name: node_name.clone(),
+            success: node_error.is_none(),
+            error: node_error,
+        });
+    }
+
+    // Emit final progress
+    let _ = app.emit(
+        "bulk-blueprint-progress",
+        serde_json::json!({
+            "completed": total,
+            "total": total,
+            "current_node_id": null,
+            "current_node_name": null,
+        }),
+    );
+
+    // Log bulk operation
+    let succeeded = results.iter().filter(|r| r.success).count();
+    let failed = results.iter().filter(|r| !r.success).count();
+    let mut log = state.activity_log.lock().await;
+    log.log(
+        "bulk_blueprint_uninstalled",
+        &blueprint.name,
+        Some(&format!(
+            "Uninstalled from {} nodes: {} succeeded, {} failed",
+            total, succeeded, failed
+        )),
+        failed == 0,
+    );
 
     Ok(results)
 }

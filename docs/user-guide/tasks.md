@@ -22,6 +22,7 @@ Creates the `~/Development` directory as a standard project root.
 | Execution Target | Any |
 | Tags | -- |
 | Config | None |
+| Uninstall | Not supported (folder may contain user projects) |
 
 ### flutter-sdk
 
@@ -32,6 +33,7 @@ Downloads and installs the Flutter SDK into the SDK directory.
 | Privilege | User |
 | Execution Target | Any |
 | Tags | `mobile`, `flutter` |
+| Uninstall | Supported -- removes Flutter PATH entries from shell configs, deletes SDK directory |
 
 Configuration:
 
@@ -48,6 +50,7 @@ Downloads Android command-line tools for Android development.
 | Privilege | User |
 | Execution Target | Any |
 | Tags | `mobile`, `android` |
+| Uninstall | Supported -- removes ANDROID_HOME/PATH entries from shell configs, deletes SDK directory |
 
 ### rust-toolchain
 
@@ -58,6 +61,7 @@ Installs the Rust toolchain via rustup, including `rustc`, `cargo`, and `rustup`
 | Privilege | User |
 | Execution Target | Any |
 | Tags | `rust`, `toolchain` |
+| Uninstall | Supported -- runs `rustup self uninstall` which removes toolchain, cargo, and PATH entries |
 
 ### intellij-idea
 
@@ -68,6 +72,7 @@ Installs IntelliJ IDEA from the Snap Store using classic confinement. The snap i
 | Privilege | Admin |
 | Execution Target | LocalOnly |
 | Tags | `ide`, `java` |
+| Uninstall | Supported -- runs `snap remove intellij-idea` |
 
 ### claude-code
 
@@ -78,6 +83,18 @@ Installs the Claude Code CLI tool via npm.
 | Privilege | User |
 | Execution Target | Any |
 | Tags | `ai`, `cli` |
+| Uninstall | Supported -- runs `npm uninstall -g @anthropic-ai/claude-code` |
+
+### codex-cli
+
+Installs the OpenAI Codex CLI tool via npm.
+
+| Property | Value |
+|----------|-------|
+| Privilege | User |
+| Execution Target | Any |
+| Tags | `ai`, `cli` |
+| Uninstall | Supported -- runs `npm uninstall -g @openai/codex` |
 
 ### git-ssh
 
@@ -88,6 +105,7 @@ Configures Git global settings and generates an SSH key pair.
 | Privilege | User |
 | Execution Target | Any |
 | Tags | `git`, `ssh` |
+| Uninstall | Supported -- removes SSH key pair (`~/.ssh/id_ed25519`), unsets `git config --global user.name` and `user.email` |
 
 Configuration:
 
@@ -150,27 +168,42 @@ Configuration values are set either in the task's base config or overridden per-
 
 ## Task Uninstall
 
-Some tasks support uninstallation, which reverses the changes made during installation. Tasks that support uninstall declare `uninstall` steps in their YAML definition.
+Tasks can support uninstallation, which reverses all changes made during installation and returns the system to its pre-task state. Each uninstall is thorough -- if a task added directories to `PATH` in shell config files, the uninstall removes those entries. If it installed packages, the uninstall removes them.
 
-To uninstall a task:
+### How Uninstall Works
 
-1. Navigate to the node detail page.
-2. Find the installed task and click **Uninstall**.
-3. Quartermaster executes the uninstall steps (e.g., removing directories, uninstalling packages).
-4. The task status reverts to `NotStarted` and the installation record is removed.
+1. Navigate to the **Task Library** and click the installed task to open its detail page.
+2. In the Properties sidebar, click **Uninstall** (only appears for installed tasks that support uninstall).
+3. Confirm the action in the confirmation dialog.
+4. Quartermaster executes the uninstall steps in order, emitting real-time progress events.
+5. On success, the task status reverts to `NotStarted` and the installation record is removed from config.
 
-Not all tasks support uninstall. The UI indicates whether uninstall is available for each task. If a task does not declare uninstall steps, the uninstall option is disabled.
+### Uninstall Support by Task
+
+| Task | Uninstall Supported | What It Removes |
+|------|--------------------:|-----------------|
+| `create-development-folder` | No | Folder may contain user projects |
+| `flutter-sdk` | Yes | PATH entries from shell configs, SDK directory |
+| `android-sdk` | Yes | ANDROID_HOME/PATH entries from shell configs, SDK directory |
+| `rust-toolchain` | Yes | Full toolchain via `rustup self uninstall` |
+| `intellij-idea` | Yes | Snap package via `snap remove` |
+| `claude-code` | Yes | npm global package |
+| `codex-cli` | Yes | npm global package |
+| `git-ssh` | Yes | SSH key pair, git global user.name/email |
+
+### Custom Tasks
+
+YAML-defined custom tasks support uninstall automatically when they include an `uninstall:` section in their definition. The uninstall steps follow the same format as install steps and can use the same variables and template syntax.
 
 ## Update Detection
 
-Quartermaster can detect when a task's defined version differs from the version installed on a node:
+Quartermaster can detect when a task's defined version differs from the version installed on a node. For each task with a `version` field and a `version_detect` command, the `check_task_updates` backend command:
 
-1. Navigate to **Check Updates** or use the `check_task_updates` command.
-2. For each task with a `version` field and a `version_detect` command, Quartermaster:
-   - Reads the defined version from the task YAML.
-   - Runs the `version_detect` command on the target node to determine the installed version.
-   - Compares the two. If they differ, an update is flagged.
-3. Tasks with available updates are highlighted in the UI so you can re-apply them.
+1. Reads the defined version from the task YAML.
+2. Runs the `version_detect` command on the target node to determine the installed version.
+3. Compares the two. If they differ, an update is flagged.
+
+Tasks with available updates can then be re-applied to bring the node up to date.
 
 ## Version Tracking
 

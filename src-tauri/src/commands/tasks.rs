@@ -163,6 +163,7 @@ pub async fn execute_task(
     task_id: String,
     node_id: Option<String>,
     blueprint_id: Option<String>,
+    config_overrides: Option<HashMap<String, serde_json::Value>>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), AppError> {
@@ -172,13 +173,20 @@ pub async fn execute_task(
         .ok_or_else(|| AppError::Task(format!("Task not found: {}", task_id)))?;
 
     let config = state.config.lock().await;
-    let task_config = config
+    let mut task_config = config
         .data
         .task_configs
         .get(&task_id)
         .cloned()
         .unwrap_or_default();
     drop(config);
+
+    // Merge blueprint config overrides into task config
+    if let Some(overrides) = config_overrides {
+        for (key, value) in overrides {
+            task_config.insert(key, value);
+        }
+    }
 
     let effective_node_id = node_id.clone().unwrap_or_else(|| "local".to_string());
 

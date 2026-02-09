@@ -71,7 +71,8 @@ export function NodeDetailPage() {
 
   // ── Blueprint apply event listeners ─────────────────────────────────
 
-  useTauriEvent<{ warning: string }>("blueprint-task-warning", (payload) => {
+  useTauriEvent<{ node_id: string; warning: string }>("blueprint-task-warning", (payload) => {
+    if (payload.node_id !== nodeId) return;
     addToast({ type: "warning", title: "Task skipped", message: payload.warning });
   });
 
@@ -124,8 +125,12 @@ export function NodeDetailPage() {
 
   // Load blueprints for the assign dialog and tasks for pre-run dialog lookups
   useEffect(() => {
-    api.listBlueprints().then(setBlueprints).catch(() => {});
-    api.listTasks().then(setAllTasks).catch(() => {});
+    api.listBlueprints().then(setBlueprints).catch((e) => {
+      addToast({ type: "error", title: "Failed to load blueprints", message: String(e) });
+    });
+    api.listTasks().then(setAllTasks).catch((e) => {
+      addToast({ type: "error", title: "Failed to load tasks", message: String(e) });
+    });
   }, [setBlueprints]);
 
   // ── Load per-node task states ──────────────────────────────────────
@@ -813,7 +818,7 @@ export function NodeDetailPage() {
         taskStates={taskStates}
         runningTaskId={runningTaskId}
       />
-      {nodeId && (
+      {nodeId && showExecution && (
         <TaskExecutionDialog
           open={showExecution}
           onClose={() => setShowExecution(false)}

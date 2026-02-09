@@ -48,7 +48,9 @@ impl FleetManager {
                         if src.extension().and_then(|e| e.to_str()) == Some("json") {
                             let dest = config_dir.join(entry.file_name());
                             if !dest.exists() {
-                                let _ = std::fs::copy(&src, &dest);
+                                if let Err(e) = std::fs::copy(&src, &dest) {
+                                    eprintln!("Warning: Failed to migrate legacy node file {:?}: {}", src, e);
+                                }
                             }
                         }
                     }

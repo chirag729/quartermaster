@@ -18,3 +18,9 @@ steps:
     progress: 100
     run: |
       npm install -g @openai/codex
+
+uninstall:
+  - name: Uninstall Codex CLI via npm
+    progress: 100
+    run: |
+      npm uninstall -g @openai/codex

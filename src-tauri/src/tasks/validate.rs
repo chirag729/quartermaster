@@ -128,8 +128,8 @@ pub fn validate_task(def: &TaskDefinition) -> Vec<ValidationError> {
         }
     }
 
-    // Collect allowed template variable names: config keys + variables + builtins
-    let variable_names: HashSet<&str> = def.variables.iter().map(|v| v.as_str()).collect();
+    // Note: def.variables are for the VariableStore 4-layer precedence system,
+    // NOT for template placeholders. Only config keys and builtins are valid in templates.
 
     // Validate steps
     if def.steps.is_empty() {
@@ -160,20 +160,20 @@ pub fn validate_task(def: &TaskDefinition) -> Vec<ValidationError> {
         }
 
         // Validate template variables in run
-        validate_template_vars(&step.run, &config_keys, &variable_names, &format!("{}.run", prefix), &mut errors);
+        validate_template_vars(&step.run, &config_keys, &format!("{}.run", prefix), &mut errors);
     }
 
     // Validate template variables in detect
-    validate_template_vars(&def.detect, &config_keys, &variable_names, "detect", &mut errors);
+    validate_template_vars(&def.detect, &config_keys, "detect", &mut errors);
 
     // Validate template variables in uninstall steps
     for (i, step) in def.uninstall.iter().enumerate() {
-        validate_template_vars(&step.run, &config_keys, &variable_names, &format!("uninstall[{}].run", i), &mut errors);
+        validate_template_vars(&step.run, &config_keys, &format!("uninstall[{}].run", i), &mut errors);
     }
 
     // Validate template variables in version_detect
     if let Some(ref vd) = def.version_detect {
-        validate_template_vars(vd, &config_keys, &variable_names, "version_detect", &mut errors);
+        validate_template_vars(vd, &config_keys, "version_detect", &mut errors);
     }
 
     // Validate v2 fields
@@ -184,7 +184,7 @@ pub fn validate_task(def: &TaskDefinition) -> Vec<ValidationError> {
                 message: "must not be empty".into(),
             });
         }
-        validate_template_vars(&download.url, &config_keys, &variable_names, "download.url", &mut errors);
+        validate_template_vars(&download.url, &config_keys, "download.url", &mut errors);
         match download.extract.as_str() {
             "tar.gz" | "tgz" | "tar.xz" | "txz" | "tar.bz2" | "tbz2" | "zip" | "none" => {}
             other => {
@@ -229,7 +229,6 @@ pub fn validate_task(def: &TaskDefinition) -> Vec<ValidationError> {
 fn validate_template_vars(
     script: &str,
     config_keys: &HashSet<&str>,
-    variable_names: &HashSet<&str>,
     field: &str,
     errors: &mut Vec<ValidationError>,
 ) {
@@ -239,13 +238,12 @@ fn validate_template_vars(
         if let Some(end) = script[abs_pos + 2..].find("}}") {
             let var_name = script[abs_pos + 2..abs_pos + 2 + end].trim();
             let is_known = BUILTIN_VARS.contains(&var_name)
-                || config_keys.contains(var_name)
-                || variable_names.contains(var_name);
+                || config_keys.contains(var_name);
             if !is_known {
                 errors.push(ValidationError {
                     field: field.to_string(),
                     message: format!(
-                        "template variable \"{{{{{}}}}}\" does not reference a config key, variable, or built-in",
+                        "template variable \"{{{{{}}}}}\" does not reference a config key or built-in",
                         var_name
                     ),
                 });
