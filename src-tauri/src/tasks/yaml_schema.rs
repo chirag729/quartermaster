@@ -52,6 +52,18 @@ pub struct TaskDefinition {
     /// The command should output just the version string (e.g., "3.24.0").
     #[serde(default)]
     pub version_detect: Option<String>,
+
+    /// AppArmor rule fragments this task advertises.
+    /// Fragments are tagged by category (e.g., "sdk") and can be subscribed to by profile templates.
+    #[serde(default)]
+    pub fragments: Vec<FragmentDef>,
+}
+
+/// An AppArmor rule fragment advertised by a task.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct FragmentDef {
+    pub tags: Vec<String>,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -268,5 +280,54 @@ steps:
         assert_eq!(aa.profile, "intellij");
         assert_eq!(aa.abstractions, vec!["shell-environment", "git-client"]);
         assert_eq!(aa.tunables.get("QM_PROJECTS").unwrap(), "{{dev_folder}}/Projects");
+    }
+
+    #[test]
+    fn parse_task_with_fragments() {
+        let yaml = r#"
+id: flutter-sdk
+name: Flutter SDK
+description: Install Flutter
+icon: Smartphone
+category: SDKs
+detect: "test -f /tmp/x"
+steps:
+  - name: Install
+    progress: 100
+    run: "echo done"
+fragments:
+  - tags: [sdk, mobile-sdk]
+    content: |
+      # Flutter rules
+      owner /home/user/.pub-cache/** rwk,
+  - tags: [dart]
+    content: |
+      # Dart rules
+      owner /home/user/.dart-tool/** rwk,
+"#;
+        let def: TaskDefinition = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(def.fragments.len(), 2);
+        assert_eq!(def.fragments[0].tags, vec!["sdk", "mobile-sdk"]);
+        assert!(def.fragments[0].content.contains("Flutter rules"));
+        assert_eq!(def.fragments[1].tags, vec!["dart"]);
+        assert!(def.fragments[1].content.contains("Dart rules"));
+    }
+
+    #[test]
+    fn parse_task_without_fragments() {
+        let yaml = r#"
+id: test-task
+name: Test
+description: A test
+icon: Star
+category: Testing
+detect: "test -f /tmp/x"
+steps:
+  - name: Do thing
+    progress: 100
+    run: "echo hello"
+"#;
+        let def: TaskDefinition = serde_yaml::from_str(yaml).unwrap();
+        assert!(def.fragments.is_empty(), "No fragments field should default to empty vec");
     }
 }

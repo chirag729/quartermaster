@@ -1,0 +1,12 @@
+# vim:syntax=apparmor
+
+# Android SDK: SDK installation, Android config
+
+  # ── SDK installation (Quartermaster default: ~/.local/share/sdk) ─
+  owner @{HOME}/.local/share/sdk/ r,
+  owner @{HOME}/.local/share/sdk/android/ r,
+  owner @{HOME}/.local/share/sdk/android/** rixm,
+
+  # ── Android config ─────────────────────────────────────────────
+  owner @{HOME}/.android/ rw,
+  owner @{HOME}/.android/** rwk,

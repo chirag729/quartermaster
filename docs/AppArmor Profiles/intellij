@@ -11,6 +11,8 @@ profile idea /snap/intellij-idea/*/bin/* {
     #include <abstractions/shell-environment>
     #include <abstractions/git-client>
     #include <abstractions/jdk-toolchain>
+    #include <abstractions/flutter-sdk>
+    #include <abstractions/android-sdk>
 
     # ── System resources ──────────────────────────────────────────────
     /etc/** r,

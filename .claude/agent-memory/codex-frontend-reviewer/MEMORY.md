@@ -48,3 +48,30 @@
 4. Replace silent .catch(() => {}) with actual error handling/toasts
 5. Guard empty array access in CommandPalette
 6. Add confirmation dialogs for destructive actions
+
+## Architecture Plan Review (2025-02-15)
+
+### HIGH-Severity Gaps in Service Layer Plan
+1. **Zustand Vanilla Store Hook Duality Footgun**: Pages must import wrapper hooks from `packages/ui/hooks/useStore.ts`, not vanilla stores directly. Services use `.getState()`. Plan doesn't explicitly document this dual API.
+2. **ToastStore UI Concern in Core**: Plan moves toastStore to core, but it uses React setTimeout for 5s auto-dismiss. Services shouldn't own UI timers. Keep toastStore in packages/ui, inject onToast callback into services.
+3. **Event Type Duplication Not Audited**: Pages define inline event types for useTauriEvent. After migration, these must be centralized in core/types/events.ts. Plan's grep strategy only finds duplicate listeners, not duplicate type definitions.
+4. **Service Init Order and Race Conditions**: Plan uses Promise.allSettled (parallel), but TaskService may emit events before listeners are attached, or BlueprintService may read fleetStore before Fleet init completes. Need sequential init with documented order.
+5. **Blueprint Assign/Unassign Store Updates Missing**: Current code calls api.assignBlueprint but doesn't update fleetStore or blueprintStore. Bug migrates to service if not fixed first.
+
+### MEDIUM-Severity Gaps
+6. **Event Listener Cleanup Not Documented**: Services need destroy() methods that stop polling intervals and unsubscribe from events. Must be idempotent.
+7. **Vite HMR Strategy Incomplete**: Plan excludes core from pre-bundling, but doesn't address symlink watchers on Windows or stale code issues if someone builds core to dist/.
+8. **Test Mock Strategy Unclear**: Core package tests need their own vitest config with Tauri mocks. Plan doesn't specify mocking strategy for service unit tests.
+9. **Cross-Package Import Cycles Not Prevented**: No guardrails documented to prevent accidental core → ui dependencies.
+10. **Phase Ordering Suboptimal**: AppArmorService is independent and could be parallel to FleetService, but plan serializes it.
+11. **Memory Leaks**: destroyServices() doesn't clear store state. Re-init without cleanup causes data duplication.
+12. **Blueprint Detail Page Preloading**: Users navigating directly to /blueprints/abc123 before blueprintService.init() completes will see empty state. Plan doesn't address this.
+13. **Component-Scoped Events Decision Framework**: Plan exempts task-output and bulk-blueprint-progress from services but doesn't explain the decision rule clearly.
+
+### Recommendation Summary
+- **Critical before Phase 0**: Fix assignBlueprint mutations, move toastStore to ui, document zustand duality, define Service interface with init/destroy
+- **Before Phase 1**: Document sequential init order, add servicesReady state, create core test mocks
+- **During migration**: Audit inline event types, add import cycle detection, test service idempotence
+- **After migration**: Clear stores in destroyServices(), document decision frameworks
+
+See `/home/chirag/Development/Projects/quartermaster/codex-review-arch-frontend.md` for full details and code examples.

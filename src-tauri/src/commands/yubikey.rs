@@ -485,6 +485,137 @@ async fn check_libfido2_available() -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// FIDO2 dependency management
+// ---------------------------------------------------------------------------
+
+/// Status of FIDO2 dependencies on the system.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Fido2DependencyStatus {
+    pub libfido2_installed: bool,
+    pub ykman_installed: bool,
+    pub all_satisfied: bool,
+    pub install_attempted: bool,
+    pub install_output: Option<String>,
+}
+
+/// Check if `ykman` (yubikey-manager) is available on the system.
+async fn check_ykman_available() -> bool {
+    let result = tokio::process::Command::new("which")
+        .arg("ykman")
+        .output()
+        .await;
+
+    matches!(result, Ok(output) if output.status.success())
+}
+
+/// Build the list of apt packages that need to be installed.
+///
+/// Returns a vector of package name strings based on which dependencies are
+/// currently missing. This is a pure function over the two boolean inputs,
+/// making it easy to unit-test without spawning processes.
+pub fn missing_packages(libfido2_installed: bool, ykman_installed: bool) -> Vec<&'static str> {
+    let mut packages = Vec::new();
+    if !libfido2_installed {
+        packages.push("libfido2-1");
+    }
+    if !ykman_installed {
+        packages.push("yubikey-manager");
+    }
+    packages
+}
+
+/// Check FIDO2 dependency status without attempting installation.
+#[tauri::command]
+pub async fn check_fido2_dependencies() -> Result<Fido2DependencyStatus, AppError> {
+    let libfido2_installed = check_libfido2_available().await;
+    let ykman_installed = check_ykman_available().await;
+    let all_satisfied = libfido2_installed && ykman_installed;
+
+    Ok(Fido2DependencyStatus {
+        libfido2_installed,
+        ykman_installed,
+        all_satisfied,
+        install_attempted: false,
+        install_output: None,
+    })
+}
+
+/// Install missing FIDO2 dependencies using PolicyKit for privilege escalation.
+///
+/// Checks which packages are missing, installs them via `pkexec apt install -y`,
+/// then verifies installation succeeded by re-checking availability.
+#[tauri::command]
+pub async fn install_fido2_dependencies() -> Result<Fido2DependencyStatus, AppError> {
+    // Initial check
+    let libfido2_installed = check_libfido2_available().await;
+    let ykman_installed = check_ykman_available().await;
+
+    // Return early if everything is already installed
+    if libfido2_installed && ykman_installed {
+        return Ok(Fido2DependencyStatus {
+            libfido2_installed: true,
+            ykman_installed: true,
+            all_satisfied: true,
+            install_attempted: false,
+            install_output: None,
+        });
+    }
+
+    // Build list of missing packages
+    let packages = missing_packages(libfido2_installed, ykman_installed);
+
+    // Install via pkexec (PolicyKit privilege escalation)
+    let mut cmd = tokio::process::Command::new("pkexec");
+    cmd.arg("apt").arg("install").arg("-y");
+    for pkg in &packages {
+        cmd.arg(pkg);
+    }
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| AppError::YubiKey(format!("Failed to run pkexec apt install: {}", e)))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    let install_output = if stderr.is_empty() {
+        stdout.clone()
+    } else {
+        format!("{}\n{}", stdout, stderr)
+    };
+
+    if !output.status.success() {
+        return Err(AppError::YubiKey(format!(
+            "Package installation failed (packages: {}): {}",
+            packages.join(", "),
+            stderr
+        )));
+    }
+
+    // Re-check after installation
+    let libfido2_installed = check_libfido2_available().await;
+    let ykman_installed = check_ykman_available().await;
+    let all_satisfied = libfido2_installed && ykman_installed;
+
+    if !all_satisfied {
+        return Err(AppError::YubiKey(format!(
+            "Installation completed but verification failed -- libfido2: {}, ykman: {}",
+            if libfido2_installed { "ok" } else { "missing" },
+            if ykman_installed { "ok" } else { "missing" },
+        )));
+    }
+
+    Ok(Fido2DependencyStatus {
+        libfido2_installed,
+        ykman_installed,
+        all_satisfied,
+        install_attempted: true,
+        install_output: Some(install_output),
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -642,5 +773,76 @@ FIDO2
 ";
         let info = parse_ykman_info(output).expect("Should parse");
         assert!(info.fido2_supported);
+    }
+
+    // -----------------------------------------------------------------------
+    // FIDO2 dependency management tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_missing_packages_both_missing() {
+        let pkgs = missing_packages(false, false);
+        assert_eq!(pkgs, vec!["libfido2-1", "yubikey-manager"]);
+    }
+
+    #[test]
+    fn test_missing_packages_only_libfido2_missing() {
+        let pkgs = missing_packages(false, true);
+        assert_eq!(pkgs, vec!["libfido2-1"]);
+    }
+
+    #[test]
+    fn test_missing_packages_only_ykman_missing() {
+        let pkgs = missing_packages(true, false);
+        assert_eq!(pkgs, vec!["yubikey-manager"]);
+    }
+
+    #[test]
+    fn test_missing_packages_none_missing() {
+        let pkgs = missing_packages(true, true);
+        assert!(pkgs.is_empty());
+    }
+
+    #[test]
+    fn test_fido2_dependency_status_serialization() {
+        let status = Fido2DependencyStatus {
+            libfido2_installed: true,
+            ykman_installed: false,
+            all_satisfied: false,
+            install_attempted: true,
+            install_output: Some("installed libfido2-1".to_string()),
+        };
+
+        let json = serde_json::to_string(&status).expect("Should serialize");
+        let deserialized: Fido2DependencyStatus =
+            serde_json::from_str(&json).expect("Should deserialize");
+
+        assert!(deserialized.libfido2_installed);
+        assert!(!deserialized.ykman_installed);
+        assert!(!deserialized.all_satisfied);
+        assert!(deserialized.install_attempted);
+        assert_eq!(
+            deserialized.install_output,
+            Some("installed libfido2-1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_fido2_dependency_status_serialization_no_output() {
+        let status = Fido2DependencyStatus {
+            libfido2_installed: true,
+            ykman_installed: true,
+            all_satisfied: true,
+            install_attempted: false,
+            install_output: None,
+        };
+
+        let json = serde_json::to_string(&status).expect("Should serialize");
+        let deserialized: Fido2DependencyStatus =
+            serde_json::from_str(&json).expect("Should deserialize");
+
+        assert!(deserialized.all_satisfied);
+        assert!(!deserialized.install_attempted);
+        assert!(deserialized.install_output.is_none());
     }
 }

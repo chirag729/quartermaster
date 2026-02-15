@@ -82,50 +82,72 @@ pub async fn detect_all_states(state: State<'_, AppState>) -> Result<Vec<TaskInf
 }
 
 /// Returns extended task state info for a specific node, including drift detection.
+///
+/// Only detects state for tasks in the node's assigned blueprint.
+/// No blueprint = empty list. This keeps the function O(blueprint size)
+/// rather than O(registry size), which matters when the registry has
+/// hundreds or thousands of tasks.
 #[tauri::command]
 pub async fn list_tasks_for_node(
     node_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<TaskStateInfo>, AppError> {
+    let fleet_manager = state.fleet_manager.lock().await;
+    let node = fleet_manager.get_node(&node_id).cloned().ok_or_else(|| {
+        AppError::Fleet(format!("Node not found: {}", node_id))
+    })?;
+    drop(fleet_manager);
+
+    // No blueprint → nothing to detect
+    let bp_id = match node.blueprint_id {
+        Some(ref id) => id.clone(),
+        None => return Ok(Vec::new()),
+    };
+
+    // Resolve the blueprint's task entries (handles inheritance)
+    let bp_mgr = state.blueprint_manager.lock().await;
+    let entries = bp_mgr.resolve_task_entries(&bp_id)?;
+    drop(bp_mgr);
+
+    let task_ids: std::collections::HashSet<String> =
+        entries.iter().map(|e| e.task_id.clone()).collect();
+
     let config = state.config.lock().await;
     let task_configs = config.data.task_configs.clone();
     let installed_tasks = config.data.installed_tasks.clone();
     drop(config);
 
-    // Determine executor for this node
-    let exec: Box<dyn CommandExecutor> = {
-        let fleet_manager = state.fleet_manager.lock().await;
-        let node = fleet_manager.get_node(&node_id).cloned().ok_or_else(|| {
-            AppError::Fleet(format!("Node not found: {}", node_id))
-        })?;
-        drop(fleet_manager);
-        match node.kind {
-            NodeKind::Local => Box::new(LocalExecutor::new()),
-            NodeKind::Remote => {
-                let ssh_config = node.ssh_config.as_ref().ok_or_else(|| {
-                    AppError::Ssh(format!(
-                        "Remote node '{}' has no SSH configuration",
-                        node.name
-                    ))
-                })?;
-                let vault_password: Option<String> = match &ssh_config.auth_method {
-                    crate::fleet::SshAuthMethod::Password { vault_key } => {
-                        if let Some(key) = vault_key {
-                            let vault = state.vault.lock().await;
-                            vault.get(key)?
-                        } else {
-                            None
-                        }
+    // Build executor
+    let exec: Box<dyn CommandExecutor> = match node.kind {
+        NodeKind::Local => Box::new(LocalExecutor::new()),
+        NodeKind::Remote => {
+            let ssh_config = node.ssh_config.as_ref().ok_or_else(|| {
+                AppError::Ssh(format!(
+                    "Remote node '{}' has no SSH configuration",
+                    node.name
+                ))
+            })?;
+            let vault_password: Option<String> = match &ssh_config.auth_method {
+                crate::fleet::SshAuthMethod::Password { vault_key } => {
+                    if let Some(key) = vault_key {
+                        let vault = state.vault.lock().await;
+                        vault.get(key)?
+                    } else {
+                        None
                     }
-                    _ => None,
-                };
-                Box::new(SshExecutor::from_ssh_config(ssh_config, vault_password.as_deref()))
-            }
+                }
+                _ => None,
+            };
+            Box::new(SshExecutor::from_ssh_config(ssh_config, vault_password.as_deref()))
         }
     };
 
     let mut results = Vec::new();
     for task in state.registry.tasks() {
+        if !task_ids.contains(task.id()) {
+            continue;
+        }
+
         let task_config = task_configs
             .get(task.id())
             .cloned()
@@ -551,6 +573,11 @@ pub async fn uninstall_task(
     config.data.installed_tasks.remove(&key);
     config.data.completed_tasks.retain(|t| t != &task_id);
     config.save()?;
+    drop(config);
+
+    // Sync any installed AppArmor profiles that may have become stale
+    // (e.g., uninstalling Flutter SDK should remove its fragments from IntelliJ profile)
+    sync_stale_profiles(&*state).await;
 
     Ok(())
 }
@@ -569,45 +596,65 @@ pub async fn check_task_updates(
     node_id: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Vec<TaskUpdateInfo>, AppError> {
-    let exec: Box<dyn CommandExecutor> = if let Some(ref nid) = node_id {
-        let fleet_manager = state.fleet_manager.lock().await;
-        let node = fleet_manager
-            .get_node(nid)
-            .cloned()
-            .ok_or_else(|| AppError::Fleet(format!("Node not found: {}", nid)))?;
-        drop(fleet_manager);
-        match node.kind {
-            NodeKind::Local => Box::new(LocalExecutor::new()),
-            NodeKind::Remote => {
-                let ssh = node.ssh_config.as_ref().ok_or_else(|| {
-                    AppError::Ssh(format!("No SSH config for node '{}'", node.name))
-                })?;
-                let vault_password: Option<String> = match &ssh.auth_method {
-                    crate::fleet::SshAuthMethod::Password { vault_key } => {
-                        if let Some(key) = vault_key {
-                            let vault = state.vault.lock().await;
-                            vault.get(key)?
-                        } else {
-                            None
+    // Determine the node (if any) and its blueprint-scoped task set
+    let (exec, task_ids): (Box<dyn CommandExecutor>, Option<std::collections::HashSet<String>>) =
+        if let Some(ref nid) = node_id {
+            let fleet_manager = state.fleet_manager.lock().await;
+            let node = fleet_manager
+                .get_node(nid)
+                .cloned()
+                .ok_or_else(|| AppError::Fleet(format!("Node not found: {}", nid)))?;
+            drop(fleet_manager);
+
+            // Scope to blueprint tasks — no blueprint means nothing to check
+            let bp_task_ids = match node.blueprint_id {
+                Some(ref bp_id) => {
+                    let bp_mgr = state.blueprint_manager.lock().await;
+                    let entries = bp_mgr.resolve_task_entries(bp_id)?;
+                    drop(bp_mgr);
+                    entries.into_iter().map(|e| e.task_id).collect()
+                }
+                None => return Ok(Vec::new()),
+            };
+
+            let executor: Box<dyn CommandExecutor> = match node.kind {
+                NodeKind::Local => Box::new(LocalExecutor::new()),
+                NodeKind::Remote => {
+                    let ssh = node.ssh_config.as_ref().ok_or_else(|| {
+                        AppError::Ssh(format!("No SSH config for node '{}'", node.name))
+                    })?;
+                    let vault_password: Option<String> = match &ssh.auth_method {
+                        crate::fleet::SshAuthMethod::Password { vault_key } => {
+                            if let Some(key) = vault_key {
+                                let vault = state.vault.lock().await;
+                                vault.get(key)?
+                            } else {
+                                None
+                            }
                         }
-                    }
-                    _ => None,
-                };
-                Box::new(SshExecutor::from_ssh_config(ssh, vault_password.as_deref()))
-            }
-        }
-    } else {
-        Box::new(LocalExecutor::new())
-    };
+                        _ => None,
+                    };
+                    Box::new(SshExecutor::from_ssh_config(ssh, vault_password.as_deref()))
+                }
+            };
+            (executor, Some(bp_task_ids))
+        } else {
+            // No node specified — check all tasks locally (Task Library use-case)
+            (Box::new(LocalExecutor::new()), None)
+        };
 
-    let mut results = Vec::new();
-
-    // Clone task_configs and drop lock before the async loop
     let config = state.config.lock().await;
     let task_configs = config.data.task_configs.clone();
     drop(config);
 
+    let mut results = Vec::new();
     for task in state.registry.all() {
+        if let Some(ref ids) = task_ids {
+            if !ids.contains(task.id()) {
+                continue;
+            }
+        }
+
         let task_config = task_configs
             .get(task.id())
             .cloned()

@@ -1,6 +1,11 @@
 # vim:syntax=apparmor
 
-# Flutter SDK: Flutter config, Dart tools, pub cache, Android config
+# Flutter SDK: SDK installation, Flutter config, Dart tools, pub cache
+
+  # ── SDK installation (Quartermaster default: ~/.local/share/sdk) ─
+  owner @{HOME}/.local/share/sdk/ r,
+  owner @{HOME}/.local/share/sdk/flutter/ r,
+  owner @{HOME}/.local/share/sdk/flutter/** rixm,
 
   # ── Flutter config ─────────────────────────────────────────────
   owner @{HOME}/.config/flutter/ rwk,
@@ -13,7 +18,3 @@
   # ── Pub cache ──────────────────────────────────────────────────
   owner @{HOME}/.pub-cache/ rw,
   owner @{HOME}/.pub-cache/** rwk,
-
-  # ── Android config ─────────────────────────────────────────────
-  owner @{HOME}/.android/ rw,
-  owner @{HOME}/.android/** rwk,

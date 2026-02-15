@@ -74,6 +74,13 @@ pub struct AppArmorInfo {
     pub abstractions: Vec<String>,
 }
 
+/// An AppArmor rule fragment advertised by a task.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FragmentInfo {
+    pub tags: Vec<String>,
+    pub content: String,
+}
+
 /// Metadata about a single installation/uninstall step (name + progress weight only; no shell commands).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StepInfo {
@@ -117,6 +124,8 @@ pub struct TaskInfo {
     pub steps: Vec<StepInfo>,
     #[serde(default)]
     pub uninstall_steps: Vec<StepInfo>,
+    #[serde(default)]
+    pub fragments: Vec<FragmentInfo>,
 }
 
 /// Output from a single step within a task execution.
@@ -153,6 +162,7 @@ pub trait SetupTask: Send + Sync {
     fn download_info(&self) -> Option<DownloadInfo> { None }
     fn desktop_info(&self) -> Option<DesktopInfo> { None }
     fn apparmor_info(&self) -> Option<AppArmorInfo> { None }
+    fn fragment_infos(&self) -> Vec<FragmentInfo> { vec![] }
     fn steps(&self) -> Vec<StepInfo> { vec![] }
     fn uninstall_steps(&self) -> Vec<StepInfo> { vec![] }
     async fn detect_state(&self, config: &HashMap<String, Value>, exec: &dyn CommandExecutor) -> TaskStatus;
@@ -216,6 +226,7 @@ pub trait SetupTask: Send + Sync {
             update_available: false,
             steps: self.steps(),
             uninstall_steps: self.uninstall_steps(),
+            fragments: self.fragment_infos(),
         }
     }
 }

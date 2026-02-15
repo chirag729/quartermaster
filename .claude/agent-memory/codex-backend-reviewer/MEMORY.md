@@ -46,3 +46,33 @@ Reviewed with codex CLI (applied all 6 strategies):
 
 ### Key Finding
 No actionable bugs found in core/state infrastructure. Recent patch additions (uninstall_blueprint commands, notification helpers) are correctly wired and follow existing patterns.
+
+## Architecture Plan Review (2026-02-15)
+
+### Scope
+Reviewed monorepo + service layer architecture plan from backend perspective:
+- docs/development/service-layer-plan.md (frontend-focused plan)
+- src-tauri/src/lib.rs, state.rs, commands/blueprints.rs
+- src/types/events.ts, src/services/tauriCommands.ts
+- package.json, vite.config.ts, tauri.conf.json
+
+### Key Findings
+1. **Backend requires NO code changes** for the restructure to work (HIGH confidence)
+2. **Event subscription timing gap**: Services initialized at App.tsx mount need to safely subscribe to events before backend emits. Plan doesn't specify timing contract. Recommend: Add backend command `init_frontend_session()` for race-free delivery OR document timing assumptions explicitly.
+3. **Event type contract mismatch**: Backend emits `blueprint-task-warning` and `bulk-blueprint-progress` events that lack frontend type definitions in `src/types/events.ts`. Should add these before moving subscriptions to service layer.
+4. **CLI abstraction missing**: Plan mentions future CLI sharing `packages/core`, but services call `listen()` from `@tauri-apps/api/event` which requires Tauri webview context. Need event bus abstraction before CLI is built.
+5. **AppArmor monitor cleanup**: Background task in apparmor/monitor.rs:107-110, 160-163 might outlive app if not properly stopped; ensure `appArmorService.stopMonitor()` is called in `destroyServices()`.
+
+### Safe Findings
+- Command registration in lib.rs is independent of monorepo structure
+- AppState access pattern works correctly with services
+- Tauri app.emit() compatible with singleton service listeners
+- Event emission in blueprints.rs uses correct patterns (app.emit with typed events)
+- Workspace structure won't affect Rust compilation
+
+### Recommendations for Plan
+1. Before Phase 0: Define how services subscribe to events (listen() requires Tauri context)
+2. Phase 0: Add missing event types to `src/types/events.ts`
+3. Phase 4: Ensure `appArmorService.stopMonitor()` cleanup is called
+4. Future (before CLI): Design event bus abstraction to work in both Tauri and CLI contexts
+5. Phase 5: Add test verifying no backend events are emitted without frontend type definitions

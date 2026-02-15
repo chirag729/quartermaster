@@ -1,6 +1,6 @@
 #include <tunables/global>
 
-profile flutter /mnt/data/Development/SDK/flutter/bin/{flutter,dart} flags=(enforce) {
+profile flutter @{HOME}/.local/share/sdk/flutter/bin/{flutter,dart} flags=(enforce) {
   #include <abstractions/base>
   #include <abstractions/nameservice>
   #include <abstractions/ssl_certs>
@@ -9,6 +9,7 @@ profile flutter /mnt/data/Development/SDK/flutter/bin/{flutter,dart} flags=(enfo
   #include <abstractions/git-client>
   #include <abstractions/jdk-toolchain>
   #include <abstractions/flutter-sdk>
+  #include <abstractions/android-sdk>
 
   # ── System binaries ────────────────────────────────────────────────
   /bin/* rixm,
@@ -21,8 +22,8 @@ profile flutter /mnt/data/Development/SDK/flutter/bin/{flutter,dart} flags=(enfo
   /usr/libexec/** rixm,
   /usr/share/** r,
 
-  # ── Flutter SDK ────────────────────────────────────────────────────
-  owner /mnt/data/Development/SDK/flutter/** rwkix,
+  # ── Flutter SDK (installation dir — also covered by flutter-sdk abstraction) ─
+  owner @{HOME}/.local/share/sdk/flutter/** rwkix,
 
   # ── Project workspace ──────────────────────────────────────────────
   owner @{HOME}/Development/ r,
@@ -30,7 +31,7 @@ profile flutter /mnt/data/Development/SDK/flutter/bin/{flutter,dart} flags=(enfo
   owner @{HOME}/Development/Projects/** rwkl,
 
   # ── Android SDK ────────────────────────────────────────────────────
-  owner /mnt/data/Development/SDK/android/** rwkix,
+  owner @{HOME}/.local/share/sdk/android/** rwkix,
 
   # ── Java ───────────────────────────────────────────────────────────
   /usr/lib/jvm/** rix,

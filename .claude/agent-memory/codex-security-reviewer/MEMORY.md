@@ -38,7 +38,41 @@
 - PrivilegedLocalExecutor uses pkexec with args array (no shell for privilege escalation), except for write_file which uses sh -c
 - LocalExecutor uses shellexpand::tilde() for path expansion (~/ support)
 
+## Architecture Review Findings (Service Layer Plan)
+
+### 1. Credential Exposure Risk — HIGH (CRITICAL)
+- **Plan section**: Moving tauriCommands.ts to packages/core/
+- **Risk**: Shared core package + future CLI = vault functions exposed to non-sandboxed contexts
+- **Issue**: CLI can receive vault passwords in shell history, env vars, proc
+- **Mitigation**: NEVER move vault functions to shared package. Create separate packages/cli/ with own auth model
+- **Test needed**: Verify tauriCommands.ts stays in packages/ui/ (Tauri-only)
+
+### 2. Service Singleton State Mutation — HIGH
+- **Plan section**: Module-level services (fleetService, blueprintService, etc.)
+- **Risk**: Any code importing service can call mutations without auth checks
+- **Issue**: CLI without permission layer could add nodes, modify blueprints, etc.
+- **Mitigation**: Implement PermissionManager interface (Tauri vs CLI contexts), or keep services Tauri-only
+- **Pattern**: SshExecutor from_ssh_config() correctly takes vault_password as parameter — good pattern for limited shared code
+
+### 3. Polling SSRF Risk — MEDIUM
+- **Plan section**: FleetService polling (30s interval)
+- **Risk**: Poll requests to localhost, 127.0.0.1, internal IPs could probe/attack local services
+- **Mitigation**: Validate node hostnames (reject localhost, private ranges), implement backoff for unreachable nodes
+- **Note**: SSH timeout (300s) is reasonable; polling interval (30s) is safe
+
+### 4. Service Init Race Condition — MEDIUM
+- **Plan section**: serviceInit.ts with Promise.allSettled
+- **Risk**: Partial initialization (blueprint load fails) leaves inconsistent state
+- **Mitigation**: Use Promise.all, fail fast, show error UI in App.tsx
+
+### 5. Vault Operations Not Audited — MEDIUM
+- **Current code**: commands/vault.rs has no activity log entries
+- **Risk**: Vault unlock, get, set, password change leave no audit trail
+- **Mitigation**: Log actions without logging sensitive data (e.g., "vault:unlock" success/fail, not the password)
+
 ## Process Notes
 - Always check how paths are passed to sh -c — context matters (single vs double quote escaping)
 - Verify EVERY call site of CommandExecutor methods, especially write_file
 - SSH password must NEVER appear in command line or logs
+- **NEW**: When reviewing architecture, trace shared boundaries — shared package = shared security context
+- **NEW**: Verify vault/credential functions NEVER move to shared packages that non-Tauri code can import

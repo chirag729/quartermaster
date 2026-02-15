@@ -19,14 +19,49 @@ fn render_with_defaults(
     let template = templates
         .get(template_id)
         .unwrap_or_else(|| panic!("template {} not found", template_id));
-    let ctx = ProfileTemplateManager::build_context(
+    let mut ctx = ProfileTemplateManager::build_context(
         template,
         registry,
         &HashMap::new(),
         &HashMap::new(),
         "/home/testuser",
     );
+    // Include empty fragments since no tasks are completed
+    let config_data = quartermaster_lib::config::manager::ConfigData::default();
+    let fragments = ProfileTemplateManager::resolve_fragments(
+        template, registry, &config_data, "/home/testuser",
+    );
+    ctx.insert("fragments".to_string(), fragments);
     ProfileTemplateManager::render(template, &ctx)
+}
+
+/// Build a full context snapshot including resolved fragments (matching what get_status() computes).
+fn build_full_context(
+    template: &quartermaster_lib::apparmor::template_schema::ProfileTemplate,
+    registry: &quartermaster_lib::tasks::registry::TaskRegistry,
+    config: &ConfigManager,
+    home: &str,
+) -> HashMap<String, String> {
+    let task_config = config
+        .data
+        .task_configs
+        .get(&template.task_id)
+        .cloned()
+        .unwrap_or_default();
+    let profile_config = config
+        .data
+        .profile_configs
+        .get(&template.id)
+        .cloned()
+        .unwrap_or_default();
+    let mut ctx = ProfileTemplateManager::build_context(
+        template, registry, &task_config, &profile_config, home,
+    );
+    let fragments = ProfileTemplateManager::resolve_fragments(
+        template, registry, &config.data, home,
+    );
+    ctx.insert("fragments".to_string(), fragments);
+    ctx
 }
 
 // ── Group 1: Static Cross-SDK Content Verification ──────────────────
@@ -224,13 +259,7 @@ fn completing_unrelated_task_does_not_affect_profile_status() {
         .unwrap_or_else(|| std::path::PathBuf::from("/home/unknown"))
         .to_string_lossy()
         .to_string();
-    let real_context = ProfileTemplateManager::build_context(
-        template,
-        &registry,
-        &HashMap::new(),
-        &HashMap::new(),
-        &real_home,
-    );
+    let real_context = build_full_context(template, &registry, &config, &real_home);
     config.data.installed_profiles.insert(
         "intellij-idea".to_string(),
         InstalledProfileState {
@@ -241,7 +270,7 @@ fn completing_unrelated_task_does_not_affect_profile_status() {
         },
     );
 
-    // Complete an unrelated task
+    // Complete an unrelated task (no fragments matching intellij's subscriptions)
     config
         .data
         .completed_tasks
@@ -312,13 +341,7 @@ fn profile_becomes_stale_on_profile_config_change() {
         .unwrap_or_else(|| std::path::PathBuf::from("/home/unknown"))
         .to_string_lossy()
         .to_string();
-    let context = ProfileTemplateManager::build_context(
-        template,
-        &registry,
-        &HashMap::new(),
-        &HashMap::new(),
-        &home,
-    );
+    let context = build_full_context(template, &registry, &config, &home);
     config.data.installed_profiles.insert(
         "intellij-idea".to_string(),
         InstalledProfileState {
@@ -363,13 +386,7 @@ fn profile_becomes_stale_on_task_config_change() {
         .unwrap_or_else(|| std::path::PathBuf::from("/home/unknown"))
         .to_string_lossy()
         .to_string();
-    let context = ProfileTemplateManager::build_context(
-        template,
-        &registry,
-        &HashMap::new(),
-        &HashMap::new(),
-        &home,
-    );
+    let context = build_full_context(template, &registry, &config, &home);
     config.data.installed_profiles.insert(
         "flutter-sdk".to_string(),
         InstalledProfileState {
@@ -417,13 +434,7 @@ fn profile_stays_installed_after_unrelated_config_change() {
         .unwrap_or_else(|| std::path::PathBuf::from("/home/unknown"))
         .to_string_lossy()
         .to_string();
-    let context = ProfileTemplateManager::build_context(
-        template,
-        &registry,
-        &HashMap::new(),
-        &HashMap::new(),
-        &home,
-    );
+    let context = build_full_context(template, &registry, &config, &home);
     config.data.installed_profiles.insert(
         "intellij-idea".to_string(),
         InstalledProfileState {
@@ -497,13 +508,18 @@ fn all_profiles_renderable_with_only_their_own_task_completed() {
     let registry = create_registry();
 
     for template in templates.list() {
-        let ctx = ProfileTemplateManager::build_context(
+        let config_data = quartermaster_lib::config::manager::ConfigData::default();
+        let mut ctx = ProfileTemplateManager::build_context(
             template,
             &registry,
             &HashMap::new(),
             &HashMap::new(),
             "/home/testuser",
         );
+        let fragments = ProfileTemplateManager::resolve_fragments(
+            template, &registry, &config_data, "/home/testuser",
+        );
+        ctx.insert("fragments".to_string(), fragments);
         let rendered = ProfileTemplateManager::render(template, &ctx);
 
         assert!(

@@ -285,6 +285,7 @@ mod tests {
             apparmor: None,
             uninstall: vec![],
             version_detect: None,
+            fragments: vec![],
         }
     }
 

@@ -17,6 +17,11 @@ pub struct ProfileTemplate {
     pub mode: String,
     #[serde(default)]
     pub variables: Vec<ProfileVariable>,
+    /// Fragment tags this profile subscribes to.
+    /// When a completed task advertises fragments with matching tags, those fragments
+    /// are automatically included in the profile via the {{fragments}} placeholder.
+    #[serde(default)]
+    pub subscribes_to: Vec<String>,
     pub content: String,
 }
 
@@ -82,6 +87,13 @@ pub fn validate_profile_template(template: &ProfileTemplate) -> Vec<String> {
                 "profile_name contains invalid characters (allowed: alphanumeric, ., _, /, -)"
                     .into(),
             );
+        }
+    }
+
+    // subscribes_to validation: no empty tags
+    for tag in &template.subscribes_to {
+        if tag.is_empty() {
+            errors.push("subscribes_to contains an empty tag".into());
         }
     }
 
@@ -194,6 +206,7 @@ pub struct ProfileTemplateInfo {
     pub profile_name: String,
     pub mode: String,
     pub variables: Vec<ProfileVariable>,
+    pub subscribes_to: Vec<String>,
     pub status: ProfileTemplateStatus,
 }
 
@@ -235,6 +248,7 @@ mod tests {
             profile_name: "quartermaster.test".into(),
             mode: "complain".into(),
             variables: vec![],
+            subscribes_to: vec![],
             content: "profile test flags=({{mode}}) { }".into(),
         }
     }
@@ -256,6 +270,7 @@ mod tests {
                     options: None,
                 },
             ],
+            subscribes_to: vec![],
             content: "profile flutter {{sdk_base_path}}/flutter flags=({{mode}}) {\n  {{home}}/.pub-cache/** rwk,\n  {{projects_path}}/** rwk,\n}".into(),
         }
     }
@@ -503,5 +518,44 @@ content: |
         assert_eq!(template.variables.len(), 1);
         assert_eq!(template.variables[0].key, "projects_path");
         assert_eq!(template.variables[0].var_type, "path");
+    }
+
+    #[test]
+    fn parse_template_with_subscribes_to() {
+        let yaml = r#"
+id: intellij
+name: IntelliJ
+description: Confine IntelliJ
+task_id: intellij-idea
+profile_name: quartermaster.intellij
+subscribes_to:
+  - sdk
+  - mobile-sdk
+content: |
+  profile intellij flags=({{mode}}) {
+  {{fragments}}
+  }
+"#;
+        let template: ProfileTemplate = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(template.subscribes_to, vec!["sdk", "mobile-sdk"]);
+    }
+
+    #[test]
+    fn validate_template_with_empty_subscription_tag_fails() {
+        let mut template = make_minimal_template();
+        template.subscribes_to = vec!["sdk".into(), "".into()];
+        let errors = validate_profile_template(&template);
+        assert!(
+            errors.iter().any(|e| e.contains("subscribes_to contains an empty tag")),
+            "Should reject empty tag: {:?}", errors
+        );
+    }
+
+    #[test]
+    fn validate_template_with_valid_subscription_tags_passes() {
+        let mut template = make_minimal_template();
+        template.subscribes_to = vec!["sdk".into(), "mobile-sdk".into()];
+        let errors = validate_profile_template(&template);
+        assert!(errors.is_empty(), "Valid subscription tags should pass: {:?}", errors);
     }
 }

@@ -5,6 +5,10 @@ task_id: intellij-idea
 profile_name: quartermaster.intellij-idea
 mode: complain
 
+subscribes_to:
+  - sdk
+  - mobile-sdk
+
 variables:
   - key: projects_path
     label: Projects Directory
@@ -55,6 +59,9 @@ content: |
     owner {{home}}/.java/** rwkl,
     owner {{home}}/.ivy2/** rwkl,
     owner {{home}}/.local/share/kotlin/** rwklix,
+
+    # ── SDK fragments (auto-composed from completed tasks) ────────
+  {{fragments}}
 
     # ── System resources ─────────────────────────────────────────────
     /etc/** r,

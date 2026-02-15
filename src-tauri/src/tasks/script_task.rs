@@ -4,8 +4,8 @@ use serde_json::Value;
 
 use super::yaml_schema::TaskDefinition;
 use super::{
-    AppArmorInfo, ConfigField, DesktopInfo, DownloadInfo, ExecutionTarget, OutputCallback,
-    PrivilegeLevel, ProgressCallback, SetupTask, StepInfo, StepOutput, TaskStatus,
+    AppArmorInfo, ConfigField, DesktopInfo, DownloadInfo, ExecutionTarget, FragmentInfo,
+    OutputCallback, PrivilegeLevel, ProgressCallback, SetupTask, StepInfo, StepOutput, TaskStatus,
 };
 use crate::error::AppError;
 use crate::executor::CommandExecutor;
@@ -155,6 +155,17 @@ impl SetupTask for ScriptTask {
             profile: a.profile.clone(),
             abstractions: a.abstractions.clone(),
         })
+    }
+
+    fn fragment_infos(&self) -> Vec<FragmentInfo> {
+        self.definition
+            .fragments
+            .iter()
+            .map(|f| FragmentInfo {
+                tags: f.tags.clone(),
+                content: f.content.clone(),
+            })
+            .collect()
     }
 
     fn steps(&self) -> Vec<StepInfo> {
@@ -365,6 +376,7 @@ mod tests {
             apparmor: None,
             uninstall: vec![],
             version_detect: None,
+            fragments: vec![],
         }
     }
 

@@ -51,6 +51,20 @@ steps:
     run: |
       test -f {{sdk_base_path}}/flutter/bin/flutter
 
+fragments:
+  - tags: [sdk, mobile-sdk]
+    content: |
+      # ── Flutter / Dart SDK ─────────────────────────────────────
+      owner {{sdk_base_path}}/ r,
+      owner {{sdk_base_path}}/flutter/ r,
+      owner {{sdk_base_path}}/flutter/** rixm,
+      owner {{home}}/.config/flutter/ r,
+      owner {{home}}/.config/flutter/** rwklix,
+      owner {{home}}/.dart-tool/ r,
+      owner {{home}}/.dart-tool/** rwklix,
+      owner {{home}}/.pub-cache/ r,
+      owner {{home}}/.pub-cache/** rwk,
+
 uninstall:
   - name: Remove Flutter PATH entries from shell configs
     progress: 30

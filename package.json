@@ -3,37 +3,16 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "workspaces": ["packages/*"],
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
+    "dev": "npm run dev -w @quartermaster/ui",
+    "build": "npm run build -w @quartermaster/ui",
+    "preview": "npm run preview -w @quartermaster/ui",
     "tauri": "tauri",
-    "test": "vitest run",
-    "test:watch": "vitest"
-  },
-  "dependencies": {
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-shell": "^2",
-    "clsx": "^2.1.1",
-    "lucide-react": "^0.468",
-    "motion": "^12",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^7",
-    "zustand": "^5"
+    "test": "npm run test -w @quartermaster/core && npm run test -w @quartermaster/ui",
+    "test:watch": "npm run test:watch -w @quartermaster/ui"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4",
-    "@tauri-apps/cli": "^2",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4",
-    "jsdom": "^27.4.0",
-    "tailwindcss": "^4",
-    "typescript": "^5.6.3",
-    "vite": "^6",
-    "vitest": "^4.0.18"
+    "@tauri-apps/cli": "^2"
   }
 }

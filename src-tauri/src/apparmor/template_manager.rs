@@ -8,7 +8,7 @@ use super::template_schema::{
     validate_profile_template, ProfileTemplate, ProfileTemplateConfig, ProfileTemplateInfo,
     ProfileTemplateStatus, ResolvedConfigField,
 };
-use crate::config::manager::{ConfigManager, InstalledProfileState};
+use crate::config::manager::{ConfigData, ConfigManager, InstalledProfileState};
 use crate::error::AppError;
 use crate::tasks::registry::TaskRegistry;
 
@@ -179,6 +179,110 @@ impl ProfileTemplateManager {
         ctx
     }
 
+    /// Resolve AppArmor rule fragments from completed tasks that match
+    /// the template's `subscribes_to` tags.
+    ///
+    /// For each completed task with fragments whose tags intersect with
+    /// `subscribes_to`, resolve `{{var}}` placeholders using the providing
+    /// task's config, add 2-space indentation, and concatenate.
+    pub fn resolve_fragments(
+        template: &ProfileTemplate,
+        registry: &TaskRegistry,
+        config_data: &ConfigData,
+        home: &str,
+    ) -> String {
+        if template.subscribes_to.is_empty() {
+            return String::new();
+        }
+
+        let subscribe_set: std::collections::HashSet<&str> =
+            template.subscribes_to.iter().map(|s| s.as_str()).collect();
+
+        // Collect (task_id, fragment_content) pairs, sorted by task ID for determinism
+        let mut task_ids: Vec<&str> = registry.tasks().iter().map(|t| t.id()).collect();
+        task_ids.sort();
+
+        let mut fragments: Vec<String> = Vec::new();
+
+        for task_id in task_ids {
+            // Only include fragments from completed tasks
+            if !config_data.completed_tasks.contains(&task_id.to_string()) {
+                continue;
+            }
+
+            let task = match registry.get(task_id) {
+                Some(t) => t,
+                None => continue,
+            };
+
+            let task_fragments = task.fragment_infos();
+            if task_fragments.is_empty() {
+                continue;
+            }
+
+            // Check if any fragment tag intersects with subscribes_to
+            for fragment in &task_fragments {
+                let has_match = fragment.tags.iter().any(|t| subscribe_set.contains(t.as_str()));
+                if !has_match {
+                    continue;
+                }
+
+                // Resolve {{var}} placeholders using the providing task's config
+                let task_config = config_data
+                    .task_configs
+                    .get(task_id)
+                    .cloned()
+                    .unwrap_or_default();
+
+                let mut resolved = fragment.content.clone();
+
+                // Always resolve {{home}}
+                resolved = resolved.replace("{{home}}", home);
+
+                // Resolve from the providing task's config schema
+                for field in task.config_schema() {
+                    let value = task_config
+                        .get(&field.key)
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&field.default_value)
+                        .to_string();
+
+                    let expanded = if field.field_type == "path" {
+                        if value == "~" {
+                            home.to_string()
+                        } else if let Some(rest) = value.strip_prefix("~/") {
+                            format!("{}/{}", home, rest)
+                        } else {
+                            value
+                        }
+                    } else {
+                        value
+                    };
+
+                    let placeholder = format!("{{{{{}}}}}", field.key);
+                    resolved = resolved.replace(&placeholder, &expanded);
+                }
+
+                // Add 2-space indent to each non-empty line
+                let indented: String = resolved
+                    .lines()
+                    .map(|line| {
+                        if line.trim().is_empty() {
+                            String::new()
+                        } else {
+                            format!("  {}", line)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                fragments.push(indented);
+            }
+        }
+
+        fragments.join("\n\n")
+    }
+
     /// Render a template's content by replacing {{var}} placeholders.
     pub fn render(template: &ProfileTemplate, context: &HashMap<String, String>) -> String {
         let mut result = template.content.clone();
@@ -222,8 +326,12 @@ impl ProfileTemplateManager {
                     .cloned()
                     .unwrap_or_default();
 
-                let current_context =
+                let mut current_context =
                     Self::build_context(template, registry, &task_config, &profile_config, &home);
+
+                // Include resolved fragments in context for staleness detection
+                let fragments = Self::resolve_fragments(template, registry, &config.data, &home);
+                current_context.insert("fragments".to_string(), fragments);
 
                 if current_context == installed.config_snapshot {
                     ProfileTemplateStatus::Installed
@@ -265,8 +373,13 @@ impl ProfileTemplateManager {
             .cloned()
             .unwrap_or_default();
 
-        let context =
+        let mut context =
             Self::build_context(&template, registry, &task_config, &profile_config, &home);
+
+        // Resolve and insert fragments from completed tasks
+        let fragments = Self::resolve_fragments(&template, registry, &config.data, &home);
+        context.insert("fragments".to_string(), fragments);
+
         let rendered = Self::render(&template, &context);
 
         // Write to a secure temp file
@@ -444,6 +557,7 @@ impl ProfileTemplateManager {
             profile_name: template.profile_name.clone(),
             mode: template.mode.clone(),
             variables: template.variables.clone(),
+            subscribes_to: template.subscribes_to.clone(),
             status,
         }
     }
@@ -470,6 +584,7 @@ mod tests {
                 default: "~/Development/Projects".into(),
                 options: None,
             }],
+            subscribes_to: vec![],
             content: "profile test {{sdk_base_path}}/flutter flags=({{mode}}) {\n  {{home}}/.pub-cache/** rwk,\n  {{projects_path}}/** rwk,\n}".into(),
         }
     }
@@ -635,18 +750,22 @@ mod tests {
             .completed_tasks
             .push("flutter-sdk".to_string());
 
-        // Build context and install with matching snapshot
+        // Build context and install with matching snapshot (including fragments)
         let home = dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("/home/unknown"))
             .to_string_lossy()
             .to_string();
-        let context = ProfileTemplateManager::build_context(
+        let mut context = ProfileTemplateManager::build_context(
             &template,
             &registry,
             &HashMap::new(),
             &HashMap::new(),
             &home,
         );
+        let fragments = ProfileTemplateManager::resolve_fragments(
+            &template, &registry, &config.data, &home,
+        );
+        context.insert("fragments".to_string(), fragments);
 
         config.data.installed_profiles.insert(
             "test-profile".to_string(),
@@ -745,7 +864,169 @@ mod tests {
         assert_eq!(info.profile_name, "quartermaster.test");
         assert_eq!(info.mode, "complain");
         assert_eq!(info.variables.len(), 1);
+        assert!(info.subscribes_to.is_empty());
         assert!(matches!(info.status, ProfileTemplateStatus::Installed));
     }
 
+    // ── Fragment resolution tests ──────────────────────────────────────
+
+    fn make_subscribing_template() -> ProfileTemplate {
+        ProfileTemplate {
+            id: "test-subscribing".into(),
+            name: "Subscribing Profile".into(),
+            description: "A profile that subscribes to SDK fragments".into(),
+            task_id: "intellij-idea".into(),
+            profile_name: "quartermaster.test-sub".into(),
+            mode: "complain".into(),
+            variables: vec![],
+            subscribes_to: vec!["sdk".into(), "mobile-sdk".into()],
+            content: "profile test flags=({{mode}}) {\n{{fragments}}\n}".into(),
+        }
+    }
+
+    #[test]
+    fn resolve_fragments_empty_subscriptions() {
+        let registry = create_registry();
+        let template = make_test_template(); // subscribes_to: []
+        let config_data = crate::config::manager::ConfigData::default();
+
+        let result = ProfileTemplateManager::resolve_fragments(
+            &template, &registry, &config_data, "/home/user",
+        );
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn resolve_fragments_no_completed_tasks() {
+        let registry = create_registry();
+        let template = make_subscribing_template();
+        let config_data = crate::config::manager::ConfigData::default();
+
+        let result = ProfileTemplateManager::resolve_fragments(
+            &template, &registry, &config_data, "/home/user",
+        );
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn resolve_fragments_single_match() {
+        let registry = create_registry();
+        let template = make_subscribing_template();
+        let mut config_data = crate::config::manager::ConfigData::default();
+        config_data.completed_tasks.push("flutter-sdk".into());
+
+        let result = ProfileTemplateManager::resolve_fragments(
+            &template, &registry, &config_data, "/home/user",
+        );
+
+        // Should contain Flutter fragment rules with resolved variables
+        assert!(result.contains("Flutter / Dart SDK"), "Should contain Flutter header: {}", result);
+        assert!(result.contains("/home/user/.local/share/sdk/flutter/"), "Should resolve sdk_base_path: {}", result);
+        assert!(result.contains("/home/user/.pub-cache/"), "Should resolve home: {}", result);
+        // Each line should be indented with 2 spaces
+        for line in result.lines() {
+            if !line.trim().is_empty() {
+                assert!(line.starts_with("  "), "Line should be 2-space indented: '{}'", line);
+            }
+        }
+    }
+
+    #[test]
+    fn resolve_fragments_multiple_matches() {
+        let registry = create_registry();
+        let template = make_subscribing_template();
+        let mut config_data = crate::config::manager::ConfigData::default();
+        config_data.completed_tasks.push("android-sdk".into());
+        config_data.completed_tasks.push("flutter-sdk".into());
+
+        let result = ProfileTemplateManager::resolve_fragments(
+            &template, &registry, &config_data, "/home/user",
+        );
+
+        // Both fragments should be present (sorted by task ID: android-sdk before flutter-sdk)
+        assert!(result.contains("Android SDK"), "Should contain Android header: {}", result);
+        assert!(result.contains("Flutter / Dart SDK"), "Should contain Flutter header: {}", result);
+
+        // Android should come before Flutter (a < f alphabetically)
+        let android_pos = result.find("Android SDK").unwrap();
+        let flutter_pos = result.find("Flutter / Dart SDK").unwrap();
+        assert!(android_pos < flutter_pos, "Android should appear before Flutter (sorted by task ID)");
+    }
+
+    #[test]
+    fn resolve_fragments_tag_mismatch() {
+        let registry = create_registry();
+        // Subscribe to a tag no task advertises
+        let mut template = make_subscribing_template();
+        template.subscribes_to = vec!["web-framework".into()];
+
+        let mut config_data = crate::config::manager::ConfigData::default();
+        config_data.completed_tasks.push("flutter-sdk".into());
+
+        let result = ProfileTemplateManager::resolve_fragments(
+            &template, &registry, &config_data, "/home/user",
+        );
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn resolve_fragments_variables_from_provider() {
+        let registry = create_registry();
+        let template = make_subscribing_template();
+        let mut config_data = crate::config::manager::ConfigData::default();
+        config_data.completed_tasks.push("flutter-sdk".into());
+
+        // Override the flutter-sdk task's sdk_base_path
+        let mut flutter_config = HashMap::new();
+        flutter_config.insert(
+            "sdk_base_path".to_string(),
+            serde_json::Value::String("~/CustomSDK".into()),
+        );
+        config_data.task_configs.insert("flutter-sdk".into(), flutter_config);
+
+        let result = ProfileTemplateManager::resolve_fragments(
+            &template, &registry, &config_data, "/home/user",
+        );
+
+        // Should use flutter-sdk's config, not the subscribing profile's
+        assert!(result.contains("/home/user/CustomSDK/flutter/"), "Should resolve from flutter's config: {}", result);
+    }
+
+    #[test]
+    fn resolve_fragments_tilde_expansion() {
+        let registry = create_registry();
+        let template = make_subscribing_template();
+        let mut config_data = crate::config::manager::ConfigData::default();
+        config_data.completed_tasks.push("flutter-sdk".into());
+
+        let result = ProfileTemplateManager::resolve_fragments(
+            &template, &registry, &config_data, "/home/testuser",
+        );
+
+        // Default sdk_base_path is "~/.local/share/sdk" which should expand
+        assert!(result.contains("/home/testuser/.local/share/sdk"), "Tilde should be expanded: {}", result);
+        assert!(!result.contains("~"), "No tildes should remain: {}", result);
+    }
+
+    #[test]
+    fn resolve_fragments_deterministic_order() {
+        let registry = create_registry();
+        let template = make_subscribing_template();
+        let mut config_data = crate::config::manager::ConfigData::default();
+        config_data.completed_tasks.push("flutter-sdk".into());
+        config_data.completed_tasks.push("android-sdk".into());
+
+        let result1 = ProfileTemplateManager::resolve_fragments(
+            &template, &registry, &config_data, "/home/user",
+        );
+
+        // Reverse completed_tasks order
+        config_data.completed_tasks = vec!["android-sdk".into(), "flutter-sdk".into()];
+
+        let result2 = ProfileTemplateManager::resolve_fragments(
+            &template, &registry, &config_data, "/home/user",
+        );
+
+        assert_eq!(result1, result2, "Fragment order should be deterministic regardless of completed_tasks order");
+    }
 }

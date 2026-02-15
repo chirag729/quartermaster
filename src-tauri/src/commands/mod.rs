@@ -9,3 +9,4 @@ pub mod tasks;
 pub mod variables;
 pub mod vault;
 pub mod yubikey;
+pub mod yubikey_setup;

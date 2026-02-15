@@ -50,6 +50,16 @@ steps:
         printf '\n# Android SDK\nexport ANDROID_HOME="{{sdk_base_path}}/android"\nexport PATH="{{sdk_base_path}}/android/cmdline-tools/latest/bin:{{sdk_base_path}}/android/platform-tools:$PATH"\n' >> "$rc"
       done
 
+fragments:
+  - tags: [sdk, mobile-sdk]
+    content: |
+      # ── Android SDK ────────────────────────────────────────────
+      owner {{sdk_base_path}}/ r,
+      owner {{sdk_base_path}}/android/ r,
+      owner {{sdk_base_path}}/android/** rixm,
+      owner {{home}}/.android/ r,
+      owner {{home}}/.android/** rwk,
+
 uninstall:
   - name: Remove Android SDK PATH and environment entries from shell configs
     progress: 30
